@@ -139,10 +139,12 @@ def custom_mse_loss(y_pred, y_true):
 
 torch.set_num_threads(4)
 
+cuda_available = torch.cuda.is_available()
+
 num_to_learn = 10
 num_to_predict = 5
 
-transform = ToTensor()
+transform = ToTensor(use_cuda=cuda_available)
 training_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="train")
 validation_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="validation")
 
@@ -161,6 +163,10 @@ training_dataset_length = int(len(training_dataset) / training_batch_size)
 validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 
 model = Autoencoder(hidden_dim=2**8, feature_dim=1, use_lstm=False)
+if cuda_available:
+	print("Moving model to gpu...")
+	model = model.cuda()
+
 opti = optim.Adam(model.parameters())
 mse_loss = custom_mse_loss
 
