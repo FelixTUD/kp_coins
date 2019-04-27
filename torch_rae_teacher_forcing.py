@@ -2,97 +2,266 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import DataLoader
+from torch.utils.data import Dataset
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas 
 
-class Encoder(nn.Module):
+class ToTensor(object):
+	def __init__(self, use_cuda=False):
+		super(ToTensor, self).__init__()
+
+		self.use_cuda = use_cuda
+
+	def __call__(self, sample):
+		input, output = sample['input'], sample['output']
+
+		input = torch.from_numpy(input).float()
+		output = torch.from_numpy(output).float()
+        
+		if self.use_cuda:
+			input = input.cuda()
+			output = output.cuda()
+
+		return {'input': input, 'output': output}
+
+class FlightDataset(Dataset):
+	def __init__(self, csv_file, input_window_size, output_window_size, transform=None, split="train"):
+		super(FlightDataset, self).__init__()
+
+		self.transform = transform
+		self.input_window_size = input_window_size
+		self.output_window_size = output_window_size
+
+		passenger_csv = pandas.read_csv(csv_file, header=0)
+		passengers = passenger_csv["Passengers"].values
+		passengers = self.normalize(passengers)
+
+		if split == "train":
+			self.passenger_data, _ = np.split(passengers, [0, int(passengers.size * 0.8)])[1:]
+		elif split == "validation":
+			_, self.passenger_data = np.split(passengers, [0, int(passengers.size * 0.8) - (self.input_window_size + self.output_window_size)])[1:]
+
+		# print("Loaded {} data points".format(self.passenger_data.size))
+
+		self.length = self.passenger_data.size - (self.input_window_size + self.output_window_size)
+
+	def __len__(self):
+		return self.length
+
+	def normalize(self, timeseries):
+		return (timeseries - np.min(timeseries)) / (np.max(timeseries) - np.min(timeseries))
+
+	def __getitem__(self, idx):
+		input_window_start = idx
+		training_input = np.reshape(self.passenger_data[input_window_start:input_window_start + self.input_window_size], (self.input_window_size, 1))
+
+		output_window_start = input_window_start + self.input_window_size
+		training_output = np.reshape(self.passenger_data[output_window_start:output_window_start + self.output_window_size], (self.output_window_size, 1))
+
+		sample = {"input" : training_input, "output" : training_output}
+
+		if self.transform:
+			sample = self.transform(sample)
+
+		return sample
+
+class EncoderGRU(nn.Module):
 	def __init__(self, hidden_dim, feature_dim):
-		super(Encoder, self).__init__()
+		super(EncoderGRU, self).__init__()
+
+		self.gru = nn.GRU(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
+
+	def forward(self, input):
+		return self.gru(input)
+
+class DecoderGRU(nn.Module):
+	def __init__(self, hidden_dim, feature_dim):
+		super(DecoderGRU, self).__init__()
+
+		self.gru = nn.GRU(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
+		self.fc = nn.Linear(hidden_dim, feature_dim)
+
+		self.activation = nn.Sigmoid()
+		# self.activation = nn.ReLU()
+
+	def forward(self, input, initial):
+		reconstruction, _ = self.gru(input, initial)
+		return self.activation(self.fc(reconstruction))
+
+class EncoderLSTM(nn.Module):
+	def __init__(self, hidden_dim, feature_dim):
+		super(EncoderLSTM, self).__init__()
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 
 	def forward(self, input):
 		return self.lstm(input)
 
-class Decoder(nn.Module):
+class DecoderLSTM(nn.Module):
 	def __init__(self, hidden_dim, feature_dim):
-		super(Decoder, self).__init__()
+		super(DecoderLSTM, self).__init__()
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 
-		self.relu = nn.ReLU()
+		self.activation = nn.Sigmoid()
+		# self.activation = nn.ReLU()
 
-	def forward(self, input, h_0, c_0):
-		reconstruction, _ = self.lstm(input, (h_0, c_0))
-		return self.relu(self.fc(reconstruction))
+	def forward(self, input, initial):
+		reconstruction, _ = self.lstm(input, initial)
+		return self.activation(self.fc(reconstruction))
 
 class Autoencoder(nn.Module):
-	def __init__(self, hidden_dim, feature_dim):
+	def __init__(self, hidden_dim, feature_dim, use_lstm=True):
 		super(Autoencoder, self).__init__()
 
-		self.encoder = Encoder(hidden_dim, feature_dim)
-		self.decoder = Decoder(hidden_dim, feature_dim)
+		if use_lstm:
+			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
+			self.decoder = DecoderLSTM(hidden_dim, feature_dim)
+		else:
+			self.encoder = EncoderGRU(hidden_dim, feature_dim)
+			self.decoder = DecoderGRU(hidden_dim, feature_dim)
 
 	def forward(self, input, teacher_input):
-		encoded_input, (h_n, c_n) = self.encoder(input)
-		reconstructed = self.decoder(teacher_input, h_0=h_n, c_0=c_n)
+		encoded_input, last_hidden = self.encoder(input)
+		reconstructed = self.decoder(teacher_input, last_hidden)
 
 		return reconstructed
 
-def new_training_example(batch_size):
-	length = np.random.randint(10, 100)
-	training_batch = torch.empty(batch_size, length, 1)
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())
 
-	for i in range(batch_size):
-		start = np.random.randint(10, 50)
-		training_example = torch.arange(start=start, end=start + length).float()
-		# training_example = (training_example - torch.min(training_example) / (torch.max(training_example) - torch.min(training_example)))
+def custom_mse_loss(y_pred, y_true):
+	return ((y_true-y_pred)**2).sum(1).mean()
 
-		training_batch[i] = training_example.reshape(training_example.shape[0], 1)
+torch.set_num_threads(4)
 
-	return training_batch
+num_to_learn = 10
+num_to_predict = 5
 
+transform = ToTensor()
+training_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="train")
+validation_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="validation")
 
-model = Autoencoder(hidden_dim=100, feature_dim=1)
+print("Training dataset length: {}".format(len(training_dataset)))
+print("Validation dataset length: {}".format(len(validation_dataset)))
+
+training_batch_size = 5
+assert ((len(training_dataset) % training_batch_size) == 0)
+validation_batch_size = 1
+assert ((len(validation_dataset) % validation_batch_size) == 0)
+
+training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=3)
+validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=3)
+
+training_dataset_length = int(len(training_dataset) / training_batch_size)
+validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
+
+model = Autoencoder(hidden_dim=2**8, feature_dim=1, use_lstm=False)
 opti = optim.Adam(model.parameters())
-mse_loss = nn.MSELoss()
+mse_loss = custom_mse_loss
 
-num_epochs = 10000
-batch_size = 10
+num_epochs = 100
 
-num_parameters = sum(p.numel() for p in model.parameters())
+# num_parameters = sum(p.numel() for p in model.parameters())
 print(model)
-print("Num parameters: {}".format(num_parameters))
+print("Num parameters: {}".format(model.num_parameters()))
 
-loss_history = np.empty(num_epochs)
+training_loss_history = np.empty(training_dataset_length)
+validation_loss_history = np.empty(validation_dataset_length)
+
+num_epochs_no_improvements = 0
+best_val_loss = np.inf
+no_improvements_patience = -1 #8
+no_improvements_min_epochs = 20
 
 for current_epoch in range(num_epochs):
-	
-	training_batch = new_training_example(batch_size)
-	reversed_batch = training_batch.flip(1)
+	training_loss_history[:] = 0
+	validation_loss_history[:] = 0
 
-	expected_output = torch.cat((training_batch, torch.zeros(10, 1, 1)), 1)
-	teacher_input = torch.cat((torch.zeros(10, 1, 1), reversed_batch), 1)
+	for i_batch, sample_batched in enumerate(training_dataloader):
 
-	predicted_sequence = model(input=training_batch, teacher_input=teacher_input)
+		input_tensor, output = sample_batched["input"], sample_batched["output"]
+		teacher_input = torch.cat((input_tensor[:,-1,:].reshape(training_batch_size, 1, 1), output[:,:-1,:]), 1)
 
-	loss = mse_loss(predicted_sequence, expected_output)
+		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-	loss_history[current_epoch] = loss.item()
+		loss = mse_loss(predicted_sequence, output)
 
-	print("Epoch {}/{}: loss: {:5f}".format(current_epoch + 1, num_epochs, loss.item()))
+		training_loss_history[i_batch] = loss.item()
 
-	opti.zero_grad()
+		opti.zero_grad()
 
-	loss.backward()
+		loss.backward()
 
-	opti.step()
+		opti.step()
 
-torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+	for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
 
-plt.plot(np.arange(loss_history.size), loss_history)
+		input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+		teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
+
+		# Predict iteratively
+
+		for _ in range(num_to_predict):
+
+			partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+
+			teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
+
+		loss = mse_loss(partial_predicted_sequence, output)
+
+		validation_loss_history[val_i_batch] = loss.item()
+
+	val_loss = validation_loss_history.mean()
+
+	if best_val_loss < val_loss:
+		num_epochs_no_improvements += 1
+	else:
+		num_epochs_no_improvements = 0
+		torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+
+	best_val_loss = np.minimum(best_val_loss, val_loss)
+
+	print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
+
+	if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
+		print("No imprevements in val loss for 3 epochs. Aborting training.")
+		break
+
+model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
+
+gt_val = []
+pred_val = []
+
+try:
+	for i, val_sample_batch in enumerate(validation_dataset):
+
+		if i % num_to_predict == 0:
+
+			input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+			input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
+			teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
+
+			gt_val += (list(output.numpy().reshape(num_to_predict)))
+
+			# Predict iteratively
+
+			for _ in range(num_to_predict):
+
+				partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+
+				teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
+
+			pred_val += (list(partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)))
+except:
+	pass
+
+plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
+plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
+plt.legend()
+plt.savefig("val_pred_plot.pdf", format="pdf")
 plt.show()
-
-
