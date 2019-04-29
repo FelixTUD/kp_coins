@@ -144,122 +144,79 @@ class Autoencoder(nn.Module):
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
-torch.set_num_threads(4)
+def main():
+	torch.set_num_threads(4)
 
-cuda_available = torch.cuda.is_available()
+	cuda_available = torch.cuda.is_available()
 
-num_to_learn = 10
-num_to_predict = 5
+	num_to_learn = 10
+	num_to_predict = 5
 
-transform = ToTensor(use_cuda=cuda_available)
-training_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="train")
-validation_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="validation")
+	transform = ToTensor(use_cuda=cuda_available)
+	training_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="train")
+	validation_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="validation")
 
-print("Training dataset length: {}".format(len(training_dataset)))
-print("Validation dataset length: {}".format(len(validation_dataset)))
+	print("Training dataset length: {}".format(len(training_dataset)))
+	print("Validation dataset length: {}".format(len(validation_dataset)))
 
-training_batch_size = 5
-assert ((len(training_dataset) % training_batch_size) == 0)
-validation_batch_size = 1
-assert ((len(validation_dataset) % validation_batch_size) == 0)
+	training_batch_size = 3
+	assert ((len(training_dataset) % training_batch_size) == 0)
+	validation_batch_size = 1
+	assert ((len(validation_dataset) % validation_batch_size) == 0)
 
-training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=3)
-validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=3)
+	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0)
+	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0)
 
-training_dataset_length = int(len(training_dataset) / training_batch_size)
-validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
+	training_dataset_length = int(len(training_dataset) / training_batch_size)
+	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 
-model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False)
-if cuda_available:
-	print("Moving model to gpu...")
-	model = model.cuda()
+	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False)
+	if cuda_available:
+		print("Moving model to gpu...")
+		model = model.cuda()
 
-opti = optim.Adam(model.parameters())
-mse_loss = custom_mse_loss
+	opti = optim.Adam(model.parameters())
+	mse_loss = custom_mse_loss
 
-num_epochs = 100
+	num_epochs = 100
 
-# num_parameters = sum(p.numel() for p in model.parameters())
-print(model)
-print("Num parameters: {}".format(model.num_parameters()))
+	# num_parameters = sum(p.numel() for p in model.parameters())
+	print(model)
+	print("Num parameters: {}".format(model.num_parameters()))
 
-training_loss_history = np.empty(training_dataset_length)
-validation_loss_history = np.empty(validation_dataset_length)
+	training_loss_history = np.empty(training_dataset_length)
+	validation_loss_history = np.empty(validation_dataset_length)
 
-num_epochs_no_improvements = 0
-best_val_loss = np.inf
-no_improvements_patience = 5
-no_improvements_min_epochs = 10
+	num_epochs_no_improvements = 0
+	best_val_loss = np.inf
+	no_improvements_patience = 5
+	no_improvements_min_epochs = 10
 
-for current_epoch in range(num_epochs):
-	training_loss_history[:] = 0
-	validation_loss_history[:] = 0
+	for current_epoch in range(num_epochs):
+		training_loss_history[:] = 0
+		validation_loss_history[:] = 0
 
-	for i_batch, sample_batched in enumerate(training_dataloader):
+		for i_batch, sample_batched in enumerate(training_dataloader):
 
-		input_tensor, output = sample_batched["input"], sample_batched["output"]
-		teacher_input = torch.cat((input_tensor[:,-1,:].reshape(training_batch_size, 1, 1), output[:,:-1,:]), 1)
+			input_tensor, output = sample_batched["input"], sample_batched["output"]
+			teacher_input = torch.cat((input_tensor[:,-1,:].reshape(training_batch_size, 1, 1), output[:,:-1,:]), 1)
 
-		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+			predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-		loss = mse_loss(predicted_sequence, output)
+			loss = mse_loss(predicted_sequence, output)
 
-		training_loss_history[i_batch] = loss.item()
+			training_loss_history[i_batch] = loss.item()
 
-		opti.zero_grad()
+			opti.zero_grad()
 
-		loss.backward()
+			loss.backward()
 
-		opti.step()
+			opti.step()
 
-	for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
-
-		input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
-		teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
-
-		# Predict iteratively
-
-		for _ in range(num_to_predict):
-
-			partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-			teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
-
-		loss = mse_loss(partial_predicted_sequence, output)
-
-		validation_loss_history[val_i_batch] = loss.item()
-
-	val_loss = validation_loss_history.mean()
-
-	if best_val_loss < val_loss:
-		num_epochs_no_improvements += 1
-	else:
-		num_epochs_no_improvements = 0
-		torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
-
-	best_val_loss = np.minimum(best_val_loss, val_loss)
-
-	print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
-
-	if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
-		print("No imprevements in val loss for 3 epochs. Aborting training.")
-		break
-
-model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
-
-gt_val = []
-pred_val = []
-
-try:
-	for i, val_sample_batch in enumerate(validation_dataset):
-
-		if i % num_to_predict == 0:
+		for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
 
 			input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
-			input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
-			teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
-
-			gt_val += (list(output.numpy().reshape(num_to_predict)))
+			teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
 
 			# Predict iteratively
 
@@ -267,14 +224,61 @@ try:
 
 				partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-				teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
+				teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
 
-			pred_val += (list(partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)))
-except:
-	pass
+			loss = mse_loss(partial_predicted_sequence, output)
 
-plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
-plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
-plt.legend()
-plt.savefig("val_pred_plot.pdf", format="pdf")
-plt.show()
+			validation_loss_history[val_i_batch] = loss.item()
+
+		val_loss = validation_loss_history.mean()
+
+		if best_val_loss < val_loss:
+			num_epochs_no_improvements += 1
+		else:
+			num_epochs_no_improvements = 0
+			torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+
+		best_val_loss = np.minimum(best_val_loss, val_loss)
+
+		print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
+
+		if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
+			print("No imprevements in val loss for 3 epochs. Aborting training.")
+			break
+
+	model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
+
+	gt_val = []
+	pred_val = []
+
+	try:
+		for i, val_sample_batch in enumerate(validation_dataset):
+
+			if i % num_to_predict == 0:
+
+				input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+				input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
+				teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
+
+				gt_val += (list(output.cpu().numpy().reshape(num_to_predict)))
+
+				# Predict iteratively
+
+				for _ in range(num_to_predict):
+
+					partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+
+					teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
+
+				pred_val += (list(partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)))
+	except:
+		pass
+
+	plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
+	plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
+	plt.legend()
+	plt.savefig("val_pred_plot.pdf", format="pdf")
+	plt.show()
+
+if __name__ == "__main__":
+	main()
