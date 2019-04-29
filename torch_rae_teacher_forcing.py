@@ -16,7 +16,7 @@ class ToTensor(object):
 		self.use_cuda = use_cuda
 
 	def __call__(self, sample):
-		input, output = sample['input'], sample['output']
+		input, output, de_normalize = sample['input'], sample['output'], sample["de_normalize"]
 
 		input = torch.from_numpy(input).float()
 		output = torch.from_numpy(output).float()
@@ -25,7 +25,7 @@ class ToTensor(object):
 			input = input.cuda()
 			output = output.cuda()
 
-		return {'input': input, 'output': output}
+		return {'input': input, 'output': output, "de_normalize" : de_normalize}
 
 class FlightDataset(Dataset):
 	def __init__(self, csv_file, input_window_size, output_window_size, transform=None, split="train"):
@@ -38,7 +38,6 @@ class FlightDataset(Dataset):
 
 		passenger_csv = pandas.read_csv(csv_file, header=0)
 		passengers = passenger_csv["Passengers"].values
-		# passengers = self.normalize(passengers)
 
 		if split == "train":
 			self.passenger_data, _ = np.split(passengers, [0, int(passengers.size * 0.8)])[1:]
@@ -50,10 +49,14 @@ class FlightDataset(Dataset):
 		num_it = self.passenger_data.size - self.window_size
 
 		self.data = []
+		self.de_normalize_data = []
 
 		for idx in range(num_it):
 			window_data = self.passenger_data[idx:idx + self.window_size]
-			self.data.append(self.normalize(window_data).reshape(self.window_size, 1))
+			normalized, de_normalize = self.normalize(window_data)
+
+			self.data.append(normalized.reshape(self.window_size, 1))
+			self.de_normalize_data.append(de_normalize)
 
 		self.length = len(self.data)
 
@@ -61,14 +64,16 @@ class FlightDataset(Dataset):
 		return self.length
 
 	def normalize(self, timeseries):
-		return (timeseries - np.min(timeseries)) / (np.max(timeseries) - np.min(timeseries))
+		min = np.min(timeseries)
+		max = np.max(timeseries)
+		return (timeseries - min) / (max - min), (min, max - min)
 
 	def __getitem__(self, idx):
 		window_data = self.data[idx]
 		training_input = window_data[:self.input_window_size]
 		training_output = window_data[self.input_window_size:]
 
-		sample = {"input" : training_input, "output" : training_output}
+		sample = {"input" : training_input, "output" : training_output, "de_normalize" : self.de_normalize_data[idx]}
 
 		if self.transform:
 			sample = self.transform(sample)
@@ -144,7 +149,7 @@ class Autoencoder(nn.Module):
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
-def main():
+def main(mode="train"):
 	torch.set_num_threads(4)
 
 	cuda_available = torch.cuda.is_available()
@@ -159,7 +164,7 @@ def main():
 	print("Training dataset length: {}".format(len(training_dataset)))
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 
-	training_batch_size = 3
+	training_batch_size = 5
 	assert ((len(training_dataset) % training_batch_size) == 0)
 	validation_batch_size = 1
 	assert ((len(validation_dataset) % validation_batch_size) == 0)
@@ -192,75 +197,76 @@ def main():
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
-	for current_epoch in range(num_epochs):
-		training_loss_history[:] = 0
-		validation_loss_history[:] = 0
+	if mode == "train":
+		for current_epoch in range(num_epochs):
+			training_loss_history[:] = 0
+			validation_loss_history[:] = 0
 
-		for i_batch, sample_batched in enumerate(training_dataloader):
+			for i_batch, sample_batched in enumerate(training_dataloader):
 
-			input_tensor, output = sample_batched["input"], sample_batched["output"]
-			teacher_input = torch.cat((input_tensor[:,-1,:].reshape(training_batch_size, 1, 1), output[:,:-1,:]), 1)
+				input_tensor, output = sample_batched["input"], sample_batched["output"]
+				teacher_input = torch.cat((input_tensor[:,-1,:].reshape(training_batch_size, 1, 1), output[:,:-1,:]), 1)
 
-			predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+				predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-			loss = mse_loss(predicted_sequence, output)
+				loss = mse_loss(predicted_sequence, output)
 
-			training_loss_history[i_batch] = loss.item()
+				training_loss_history[i_batch] = loss.item()
 
-			opti.zero_grad()
+				opti.zero_grad()
 
-			loss.backward()
+				loss.backward()
 
-			opti.step()
+				opti.step()
 
-		for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
+			for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
 
-			input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
-			teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
+				input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+				teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
 
-			# Predict iteratively
+				# Predict iteratively
 
-			for _ in range(num_to_predict):
+				for _ in range(num_to_predict):
 
-				partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+					partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-				teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
+					teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
 
-			loss = mse_loss(partial_predicted_sequence, output)
+				loss = mse_loss(partial_predicted_sequence, output)
 
-			validation_loss_history[val_i_batch] = loss.item()
+				validation_loss_history[val_i_batch] = loss.item()
 
-		val_loss = validation_loss_history.mean()
+			val_loss = validation_loss_history.mean()
 
-		if best_val_loss < val_loss:
-			num_epochs_no_improvements += 1
-		else:
-			num_epochs_no_improvements = 0
-			torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+			if best_val_loss < val_loss:
+				num_epochs_no_improvements += 1
+			else:
+				num_epochs_no_improvements = 0
+				torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
 
-		best_val_loss = np.minimum(best_val_loss, val_loss)
+			best_val_loss = np.minimum(best_val_loss, val_loss)
 
-		print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
+			print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
 
-		if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
-			print("No imprevements in val loss for 3 epochs. Aborting training.")
-			break
+			if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
+				print("No imprevements in val loss for 3 epochs. Aborting training.")
+				break
 
-	model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
+	if mode == "infer":
+		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
 
-	gt_val = []
-	pred_val = []
+		gt_val = []
+		pred_val = []
 
-	try:
 		for i, val_sample_batch in enumerate(validation_dataset):
 
 			if i % num_to_predict == 0:
 
-				input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+				input_tensor, output, (de_normalize_min, de_normalize_prod)  = val_sample_batch["input"], val_sample_batch["output"], val_sample_batch["de_normalize"]
 				input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
 				teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
 
-				gt_val += (list(output.cpu().numpy().reshape(num_to_predict)))
+				gt_val += list((((output.cpu().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min))
 
 				# Predict iteratively
 
@@ -270,15 +276,13 @@ def main():
 
 					teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
 
-				pred_val += (list(partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)))
-	except:
-		pass
+				pred_val += list(((partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min)
 
-	plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
-	plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
-	plt.legend()
-	plt.savefig("val_pred_plot.pdf", format="pdf")
-	plt.show()
+		plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
+		plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
+		plt.legend()
+		plt.savefig("val_pred_plot.pdf", format="pdf")
+		plt.show()
 
 if __name__ == "__main__":
-	main()
+	main("infer")
