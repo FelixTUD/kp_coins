@@ -29,7 +29,7 @@ def main(mode="train"):
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 	print("Test dataset length: {}".format(len(test_dataset)))
 
-	training_batch_size = 1
+	training_batch_size = 10
 	validation_batch_size = 1
 	test_batch_size = 1
 
@@ -47,7 +47,7 @@ def main(mode="train"):
 		model = model.cuda()
 
 	opti = optim.Adam(model.parameters())
-	loss = custom_mse_loss
+	loss_fn = custom_mse_loss
 
 	num_epochs = 50
 
@@ -81,7 +81,7 @@ def main(mode="train"):
 
 				predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-				loss = mse_loss(predicted_sequence, output)
+				loss = loss_fn(predicted_sequence, output)
 
 				training_loss_history[i_batch] = loss.item()
 
