@@ -34,10 +34,11 @@ class FlightDataset(Dataset):
 		self.transform = transform
 		self.input_window_size = input_window_size
 		self.output_window_size = output_window_size
+		self.window_size = self.input_window_size + self.output_window_size
 
 		passenger_csv = pandas.read_csv(csv_file, header=0)
 		passengers = passenger_csv["Passengers"].values
-		passengers = self.normalize(passengers)
+		# passengers = self.normalize(passengers)
 
 		if split == "train":
 			self.passenger_data, _ = np.split(passengers, [0, int(passengers.size * 0.8)])[1:]
@@ -46,7 +47,15 @@ class FlightDataset(Dataset):
 
 		# print("Loaded {} data points".format(self.passenger_data.size))
 
-		self.length = self.passenger_data.size - (self.input_window_size + self.output_window_size)
+		num_it = self.passenger_data.size - self.window_size
+
+		self.data = []
+
+		for idx in range(num_it):
+			window_data = self.passenger_data[idx:idx + self.window_size]
+			self.data.append(self.normalize(window_data).reshape(self.window_size, 1))
+
+		self.length = len(self.data)
 
 	def __len__(self):
 		return self.length
@@ -55,11 +64,9 @@ class FlightDataset(Dataset):
 		return (timeseries - np.min(timeseries)) / (np.max(timeseries) - np.min(timeseries))
 
 	def __getitem__(self, idx):
-		input_window_start = idx
-		training_input = np.reshape(self.passenger_data[input_window_start:input_window_start + self.input_window_size], (self.input_window_size, 1))
-
-		output_window_start = input_window_start + self.input_window_size
-		training_output = np.reshape(self.passenger_data[output_window_start:output_window_start + self.output_window_size], (self.output_window_size, 1))
+		window_data = self.data[idx]
+		training_input = window_data[:self.input_window_size]
+		training_output = window_data[self.input_window_size:]
 
 		sample = {"input" : training_input, "output" : training_output}
 
@@ -162,7 +169,7 @@ validation_dataloader = DataLoader(validation_dataset, batch_size=validation_bat
 training_dataset_length = int(len(training_dataset) / training_batch_size)
 validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 
-model = Autoencoder(hidden_dim=2**8, feature_dim=1, use_lstm=False)
+model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False)
 if cuda_available:
 	print("Moving model to gpu...")
 	model = model.cuda()
@@ -181,8 +188,8 @@ validation_loss_history = np.empty(validation_dataset_length)
 
 num_epochs_no_improvements = 0
 best_val_loss = np.inf
-no_improvements_patience = -1 #8
-no_improvements_min_epochs = 20
+no_improvements_patience = 5
+no_improvements_min_epochs = 10
 
 for current_epoch in range(num_epochs):
 	training_loss_history[:] = 0
