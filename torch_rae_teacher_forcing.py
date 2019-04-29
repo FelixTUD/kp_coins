@@ -8,6 +8,7 @@ from torch.utils.data import Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas 
+import sys
 
 class ToTensor(object):
 	def __init__(self, use_cuda=False):
@@ -64,9 +65,15 @@ class FlightDataset(Dataset):
 		return self.length
 
 	def normalize(self, timeseries):
-		min = np.min(timeseries)
-		max = np.max(timeseries)
-		return (timeseries - min) / (max - min), (min, max - min)
+		# MinMax Scaler
+		# min = np.min(timeseries)
+		# max = np.max(timeseries)
+		# return (timeseries - min) / (max - min), (min, max - min)
+
+		# Standard Scaler ## Performt besser --> Sigmoid kann nicht mehr genutzt werden, da Wertebereich außerhalb [0, 1]
+		mean = timeseries.mean()
+		stddev = timeseries.std()
+		return (timeseries - mean) / stddev, (mean, stddev) 
 
 	def __getitem__(self, idx):
 		window_data = self.data[idx]
@@ -96,7 +103,8 @@ class DecoderGRU(nn.Module):
 		self.gru = nn.GRU(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 
-		self.activation = nn.Sigmoid()
+		# self.activation = nn.Sigmoid()
+		self.activation = nn.Tanhshrink() #???
 		# self.activation = nn.ReLU()
 
 	def forward(self, input, initial):
@@ -119,7 +127,8 @@ class DecoderLSTM(nn.Module):
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 
-		self.activation = nn.Sigmoid()
+		# self.activation = nn.Sigmoid()
+		self.activation = nn.Tanhshrink()
 		# self.activation = nn.ReLU()
 
 	def forward(self, input, initial):
@@ -154,8 +163,8 @@ def main(mode="train"):
 
 	cuda_available = torch.cuda.is_available()
 
-	num_to_learn = 10
-	num_to_predict = 5
+	num_to_learn = 8
+	num_to_predict = 2
 
 	transform = ToTensor(use_cuda=cuda_available)
 	training_dataset = FlightDataset("airline-passengers.csv", input_window_size=num_to_learn, output_window_size=num_to_predict, transform=transform, split="train")
@@ -249,7 +258,7 @@ def main(mode="train"):
 			print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
 
 			if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
-				print("No imprevements in val loss for 3 epochs. Aborting training.")
+				print("No improvements in val loss for 3 epochs. Aborting training.")
 				break
 
 	if mode == "infer":
@@ -285,4 +294,4 @@ def main(mode="train"):
 		plt.show()
 
 if __name__ == "__main__":
-	main("infer")
+	main(sys.argv[1])
