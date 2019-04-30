@@ -75,6 +75,7 @@ class CoinDataset(Dataset):
 		reversed_timeseries = np.flip(timeseries).copy() # Negative strides nicht supported von pytorch, deshalb copy()
 		teacher_input = np.zeros(reversed_timeseries.shape)
 		teacher_input[1:] = reversed_timeseries[1:]
+		teacher_input[0] = -1
 
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
 		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)

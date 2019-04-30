@@ -19,6 +19,57 @@ from model import Autoencoder
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
+def train(model, dataloader, optimizer, loss_fn):
+	model.train()
+	num_steps = len(dataloader)
+
+	loss_history = np.empty(num_steps)
+
+	for i_batch, sample_batched in enumerate(dataloader):
+		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
+
+		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+
+		loss = loss_fn(predicted_sequence, reversed_input)
+		loss_history[i_batch] = loss.item()
+
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+
+		del loss # Necessary?
+
+	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
+
+def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
+	model.eval()
+	num_steps = len(dataloader)
+
+	loss_history = np.empty(num_steps)
+
+	for i_batch, sample_batched in enumerate(dataloader):
+		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+		input_tensor, reversed_input, _, _ = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
+
+		batch_size, seq_length, feature_dim = input_tensor.shape
+
+		iterative_teacher_input = torch.empty(input_tensor.shape).to(input_tensor.device)
+		iterative_teacher_input[:, 0,:] = -1
+
+		for i in range(seq_length):
+			print(i)
+			predicted_sequence_part = model(input=input_tensor, teacher_input=iterative_teacher_input[:, i + 1,:].reshape(batch_size, i + 1, 1))
+			iterative_teacher_input[:, i + 1,:] = predicted_sequence_part.data[:, i, :]
+
+		loss = loss_fn(predicted_sequence, reversed_input)
+
+		loss_history[i_batch] = loss.item()
+
+		del loss # Necessary?
+
+	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
+
 def main(args):
 	print("CPU count: {}".format(args.cpu_count))
 
@@ -79,78 +130,30 @@ def main(args):
 
 	if args.mode == "train":
 		with open(os.path.join(args.path, args.log_file), "w") as log_file:
+			log_file.write("epoch, loss, val_loss\n")
 
 			for current_epoch in range(num_epochs):
-				training_loss_history[:] = 0
-				validation_loss_history[:] = 0
 
 				start_time = time.time()
-
-				for i_batch, sample_batched in enumerate(training_dataloader):
-					print("{}/{}".format(i_batch + 1, training_dataset_length), end="\r")
-					input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
-
-					# if cuda_available:
-					# 	input_tensor = input_tensor.cuda()
-
-					# reversed_input = torch.flip(input_tensor, dims=(1, 2))
-					# teacher_input = torch.cat((start_of_sequence, input_tensor[:,:-1,:]), 1)
-
-					predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-					loss = loss_fn(predicted_sequence, reversed_input)
-
-					training_loss_history[i_batch] = loss.item()
-
-					opti.zero_grad()
-
-					loss.backward()
-
-					opti.step()
-
-					del loss # Necessary?
-
+				# train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss)
 				end_time = time.time()
 
-				print("Elapsed time: {:2f} seconds".format(end_time - start_time))
+				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 
-				# for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
+				# start_time = time.time()
+				# validation_history = evaluate(model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				# end_time = time.time()
 
-				# 	input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
-				# 	teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
-
-				# 	# Predict iteratively
-
-				# 	for _ in range(num_to_predict):
-
-				# 		partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-				# 		teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
-
-				# 	loss = mse_loss(partial_predicted_sequence, output)
-
-				# 	validation_loss_history[val_i_batch] = loss.item()
-
-				# val_loss = validation_loss_history.mean()
-
-				# if best_val_loss < val_loss:
-				# 	num_epochs_no_improvements += 1
-				# else:
-				# 	num_epochs_no_improvements = 0
-				# 	torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
-
-				# best_val_loss = np.minimum(best_val_loss, val_loss)
+				# print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
 				training_epoch_loss = training_loss_history.mean()
-				print("Epoch {}/{}: loss: {:5f}".format(current_epoch + 1, num_epochs, training_epoch_loss))
-				log_file.write("{}, {}\n".format(current_epoch + 1, training_epoch_loss))
+
+				print("Epoch {}/{}: loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"]))
+				log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
+				# print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"]))
+				# log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
 				log_file.flush()
 
-				# print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
-
-				# if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
-				# 	print("No imprevements in val loss for 3 epochs. Aborting training.")
-				# 	break
 
 	if args.mode == "infer":
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
