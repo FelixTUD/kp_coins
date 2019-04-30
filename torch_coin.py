@@ -6,34 +6,41 @@ from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 
 import numpy as np
-# import matplotlib.pyplot as plt
+import multiprocessing
 import pandas 
 import sys
+import argparse
+
 from dataset import CoinDatasetLoader, CoinDataset
 from model import Autoencoder
 
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
-def main(mode="train"):
-	torch.set_num_threads(4)
+def main(args):
+	print("CPU count: {}".format(args.cpu_count))
+
+	torch.set_num_threads(args.cpu_count)
 	cuda_available = torch.cuda.is_available()
 
 	dataset_loader = CoinDatasetLoader(path_to_hdf5="coin_data/data.hdf5", validation_split=0.1, test_split=0.1)
 
+	print("Loading training set")
 	training_dataset = dataset_loader.get_dataset("training")
+	print("Loading validation set")
 	validation_dataset = dataset_loader.get_dataset("validation")
+	print("Loading test set")
 	test_dataset = dataset_loader.get_dataset("test")
 
 	print("Training dataset length: {}".format(len(training_dataset)))
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 	print("Test dataset length: {}".format(len(test_dataset)))
 
-	training_batch_size = 10
+	training_batch_size = args.batch_size
 	validation_batch_size = 1
 	test_batch_size = 1
 
-	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)
+	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
 	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
 	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
@@ -41,10 +48,12 @@ def main(mode="train"):
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False, activation_function=nn.Tanhshrink())
+	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False, activation_function=nn.Sigmoid())
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
+
+	# model = nn.DataParallel(model, device_ids=[0, 1, 2])
 
 	opti = optim.Adam(model.parameters())
 	loss_fn = custom_mse_loss
@@ -62,26 +71,29 @@ def main(mode="train"):
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
-	if mode == "train":
+	# start_of_sequence = torch.empty(training_batch_size, 1, 1)
+	# start_of_sequence[:,:,0] = -1
+	# if cuda_available:
+	# 	start_of_sequence = start_of_sequence.cuda()
+
+	if args.mode == "train":
 		for current_epoch in range(num_epochs):
 			training_loss_history[:] = 0
 			validation_loss_history[:] = 0
 
 			for i_batch, sample_batched in enumerate(training_dataloader):
 				print("{}/{}".format(i_batch + 1, training_dataset_length), end="\r")
+				input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-				input_tensor, output = sample_batched["input"], sample_batched["label"]
+				# if cuda_available:
+				# 	input_tensor = input_tensor.cuda()
 
-				start_of_sequence = torch.empty(training_batch_size, 1, 1)
-				start_of_sequence[:,:,0] = -1
-				if cuda_available:
-					start_of_sequence = start_of_sequence.cuda()
-
-				teacher_input = torch.flip(torch.cat((start_of_sequence, input_tensor[:,:-1,:]), 1), dims=(1, 2))
+				# reversed_input = torch.flip(input_tensor, dims=(1, 2))
+				# teacher_input = torch.cat((start_of_sequence, input_tensor[:,:-1,:]), 1)
 
 				predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-				loss = loss_fn(predicted_sequence, output)
+				loss = loss_fn(predicted_sequence, reversed_input)
 
 				training_loss_history[i_batch] = loss.item()
 
@@ -90,6 +102,8 @@ def main(mode="train"):
 				loss.backward()
 
 				opti.step()
+
+				del loss
 
 			# for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
 
@@ -126,7 +140,7 @@ def main(mode="train"):
 			# 	print("No imprevements in val loss for 3 epochs. Aborting training.")
 			# 	break
 
-	if mode == "infer":
+	if args.mode == "infer":
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
 
 		gt_val = []
@@ -159,4 +173,13 @@ def main(mode="train"):
 		plt.show()
 
 if __name__ == "__main__":
-	main(sys.argv[1])
+	torch.multiprocessing.set_start_method("spawn")
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train' or 'infer'. Default 'train'")
+	parser.add_argument("-c", "--cpu_count", type=int, default=1, help="Number of cpus to use. Default 1")
+	parser.add_argument("-b", "--batch_size", type=int, default=1, help="Batch size. Default 1")
+
+	args = parser.parse_args()
+
+	main(args)

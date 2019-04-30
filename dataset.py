@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas 
 import h5py
-
+import time
 
 
 class CoinDataset(Dataset):
@@ -16,8 +16,14 @@ class CoinDataset(Dataset):
 		self.examples = examples
 		self.max_length = max_length
 
-		self.data_file = h5py.File(path_to_hdf5, "r")
+		self.data_file = None
 		self.cuda_available = torch.cuda.is_available()
+
+		self.data_cache = []
+
+		for i in range(len(examples)):
+			print("Preparing {}/{}".format(i + 1, len(examples)), end="\r")
+			self.data_cache.append(self.prepare_data_item(i))
 		
 	def __len__(self):
 		return len(self.examples)
@@ -58,16 +64,48 @@ class CoinDataset(Dataset):
 
 		return tensor
 
-	def __getitem__(self, idx):
+	def prepare_data_item(self, idx):
 		coin, gain, number = self.examples[idx]
 
-		timeseries = self.data_file[coin][gain][number]["values"][:self.max_length]
-		timeseries = self.min_max_scale(timeseries)
+		if not self.data_file:
+			self.data_file = h5py.File(self.path_to_hdf5, "r")
+		timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:8] # Diese Art der Indizierung ist schneller
 
+		# self.data_file.close()
+
+		timeseries = self.min_max_scale(timeseries)
+		reversed_timeseries = np.flip(timeseries).copy() # Negative strides nicht supported von pytorch, deshalb copy()
+		teacher_input = np.zeros(reversed_timeseries.shape)
+		teacher_input[1:] = reversed_timeseries[1:]
+
+		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
+		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
 		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
 		coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin))))
 
-		return {"input": timeseries, "label": coin_class}
+		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
+
+	def __getitem__(self, idx):
+		return self.data_cache[idx]
+		# coin, gain, number = self.examples[idx]
+
+		# if not self.data_file:
+		# 	self.data_file = h5py.File(self.path_to_hdf5, "r")
+		# timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:8] # Diese Art der Indizierung ist schneller
+
+		# # self.data_file.close()
+
+		# timeseries = self.min_max_scale(timeseries)
+		# reversed_timeseries = np.flip(timeseries).copy() # Negative strides nicht supported bon pytorch, deshalb copy
+		# teacher_input = np.zeros(reversed_timeseries.shape)
+		# teacher_input[1:] = reversed_timeseries[1:]
+
+		# reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
+		# teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
+		# timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
+		# coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin))))
+
+		# return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 
 class CoinDatasetLoader:
 	def __init__(self, path_to_hdf5, validation_split, test_split):
