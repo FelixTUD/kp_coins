@@ -10,6 +10,8 @@ import multiprocessing
 import pandas 
 import sys
 import argparse
+import time
+import os
 
 from dataset import CoinDatasetLoader, CoinDataset
 from model import Autoencoder
@@ -23,7 +25,7 @@ def main(args):
 	torch.set_num_threads(args.cpu_count)
 	cuda_available = torch.cuda.is_available()
 
-	dataset_loader = CoinDatasetLoader(path_to_hdf5="coin_data/data.hdf5", validation_split=0.1, test_split=0.1)
+	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), validation_split=0.1, test_split=0.1)
 
 	print("Loading training set")
 	training_dataset = dataset_loader.get_dataset("training")
@@ -37,18 +39,18 @@ def main(args):
 	print("Test dataset length: {}".format(len(test_dataset)))
 
 	training_batch_size = args.batch_size
-	validation_batch_size = 1
-	test_batch_size = 1
+	validation_batch_size = args.batch_size
+	test_batch_size = args.batch_size
 
-	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
-	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
-	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
+	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=args.cpu_count, drop_last=True)	
+	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=args.cpu_count, drop_last=(validation_batch_size > 1))
+	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=args.cpu_count, drop_last=(test_batch_size > 1))
 
 	training_dataset_length = int(len(training_dataset) / training_batch_size)
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=False, activation_function=nn.Sigmoid())
+	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid())
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -71,74 +73,84 @@ def main(args):
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
-	# start_of_sequence = torch.empty(training_batch_size, 1, 1)
-	# start_of_sequence[:,:,0] = -1
-	# if cuda_available:
-	# 	start_of_sequence = start_of_sequence.cuda()
+	log_file_dir = os.path.dirname(args.log_file)
+	if log_file_dir:
+		os.makedirs(log_file_dir, exist_ok=True)
 
 	if args.mode == "train":
-		for current_epoch in range(num_epochs):
-			training_loss_history[:] = 0
-			validation_loss_history[:] = 0
+		with open(os.path.join(args.path, args.log_file), "w") as log_file:
 
-			for i_batch, sample_batched in enumerate(training_dataloader):
-				print("{}/{}".format(i_batch + 1, training_dataset_length), end="\r")
-				input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
+			for current_epoch in range(num_epochs):
+				training_loss_history[:] = 0
+				validation_loss_history[:] = 0
 
-				# if cuda_available:
-				# 	input_tensor = input_tensor.cuda()
+				start_time = time.time()
 
-				# reversed_input = torch.flip(input_tensor, dims=(1, 2))
-				# teacher_input = torch.cat((start_of_sequence, input_tensor[:,:-1,:]), 1)
+				for i_batch, sample_batched in enumerate(training_dataloader):
+					print("{}/{}".format(i_batch + 1, training_dataset_length), end="\r")
+					input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-				predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+					# if cuda_available:
+					# 	input_tensor = input_tensor.cuda()
 
-				loss = loss_fn(predicted_sequence, reversed_input)
+					# reversed_input = torch.flip(input_tensor, dims=(1, 2))
+					# teacher_input = torch.cat((start_of_sequence, input_tensor[:,:-1,:]), 1)
 
-				training_loss_history[i_batch] = loss.item()
+					predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-				opti.zero_grad()
+					loss = loss_fn(predicted_sequence, reversed_input)
 
-				loss.backward()
+					training_loss_history[i_batch] = loss.item()
 
-				opti.step()
+					opti.zero_grad()
 
-				del loss
+					loss.backward()
 
-			# for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
+					opti.step()
 
-			# 	input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
-			# 	teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
+					del loss # Necessary?
 
-			# 	# Predict iteratively
+				end_time = time.time()
 
-			# 	for _ in range(num_to_predict):
+				print("Elapsed time: {:2f} seconds".format(end_time - start_time))
 
-			# 		partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
+				# for val_i_batch, val_sample_batch in enumerate(validation_dataloader):
 
-			# 		teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
+				# 	input_tensor, output = val_sample_batch["input"], val_sample_batch["output"]
+				# 	teacher_input = input_tensor[:,-1,:].reshape(validation_batch_size, 1, 1)
 
-			# 	loss = mse_loss(partial_predicted_sequence, output)
+				# 	# Predict iteratively
 
-			# 	validation_loss_history[val_i_batch] = loss.item()
+				# 	for _ in range(num_to_predict):
 
-			# val_loss = validation_loss_history.mean()
+				# 		partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-			# if best_val_loss < val_loss:
-			# 	num_epochs_no_improvements += 1
-			# else:
-			# 	num_epochs_no_improvements = 0
-			# 	torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+				# 		teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(validation_batch_size, 1, 1)), 1)
 
-			# best_val_loss = np.minimum(best_val_loss, val_loss)
+				# 	loss = mse_loss(partial_predicted_sequence, output)
 
-			print("Epoch {}/{}: loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean()))
+				# 	validation_loss_history[val_i_batch] = loss.item()
 
-			# print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
+				# val_loss = validation_loss_history.mean()
 
-			# if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
-			# 	print("No imprevements in val loss for 3 epochs. Aborting training.")
-			# 	break
+				# if best_val_loss < val_loss:
+				# 	num_epochs_no_improvements += 1
+				# else:
+				# 	num_epochs_no_improvements = 0
+				# 	torch.save(model.state_dict(), "rae_teacher_forcing_weights.pt")
+
+				# best_val_loss = np.minimum(best_val_loss, val_loss)
+
+				training_epoch_loss = training_loss_history.mean()
+				print("Epoch {}/{}: loss: {:5f}".format(current_epoch + 1, num_epochs, training_epoch_loss))
+				log_file.write("{}, {}\n".format(current_epoch + 1, training_epoch_loss))
+				log_file.flush()
+
+				# print("Epoch {}/{}: loss: {:5f}, val_loss: {:5f}".format(current_epoch + 1, num_epochs, training_loss_history.mean(), val_loss))
+
+				# if num_epochs_no_improvements == no_improvements_patience and no_improvements_min_epochs < current_epoch:
+				# 	print("No imprevements in val loss for 3 epochs. Aborting training.")
+				# 	break
 
 	if args.mode == "infer":
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
@@ -179,6 +191,9 @@ if __name__ == "__main__":
 	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train' or 'infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=1, help="Number of cpus to use. Default 1")
 	parser.add_argument("-b", "--batch_size", type=int, default=1, help="Batch size. Default 1")
+	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
+	parser.add_argument("-l", "--log_file", type=str, default="metrics.csv", help="CSV logfile. Creates path if it does not exist. Default 'metrics.csv'")
+	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
 
 	args = parser.parse_args()
 

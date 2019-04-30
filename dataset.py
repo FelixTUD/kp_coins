@@ -7,8 +7,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas 
 import h5py
-import time
-
 
 class CoinDataset(Dataset):
 	def __init__(self, path_to_hdf5, examples, max_length):
