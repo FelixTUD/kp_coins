@@ -69,7 +69,7 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 
 			plt.plot(np_input, label="input")
 			plt.plot(np_predicted, label="predicted")
-			plt.savefig(os.path.join(plot_dir, str(i) + ".pdf"), format="pdf")
+			plt.savefig(os.path.join(plot_dir, str(i_batch * num_steps + i) + ".png"), format="png")
 			plt.clf()
 
 		loss = loss_fn(predicted_sequence, reversed_input)
@@ -112,7 +112,7 @@ def main(args):
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=2**6, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid())
+	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid())
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -207,6 +207,7 @@ if __name__ == "__main__":
 	parser.add_argument("-l", "--log_file", type=str, default="metrics.csv", help="CSV logfile. Creates path if it does not exist. Default 'metrics.csv'")
 	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
+	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of RNN hidden layer.")
 
 	args = parser.parse_args()
 
