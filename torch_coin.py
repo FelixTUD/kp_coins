@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import os
+import matplotlib.pyplot as plt
 
 from dataset import CoinDatasetLoader, CoinDataset
 from model import Autoencoder
@@ -42,13 +43,16 @@ def train(model, dataloader, optimizer, loss_fn):
 
 	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
 
-def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
+def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 	model = model.eval()
 	model.set_eval_mode(True)
 
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
+
+	plot_dir = "plots/" + str(epoch)
+	os.makedirs(plot_dir, exist_ok=True)
 
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
@@ -58,6 +62,15 @@ def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
 		iterative_teacher_input[:, 0,:] = -1
 
 		predicted_sequence = model(input=input_tensor, teacher_input=iterative_teacher_input)
+
+		for i in range(input_tensor.shape[0]):
+			np_input = input_tensor[i].cpu().numpy().reshape(input_tensor.shape[1])
+			np_predicted = np.flip(predicted_sequence[i].detach().cpu().numpy().reshape(predicted_sequence.shape[1]))
+
+			plt.plot(np_input, label="input")
+			plt.plot(np_predicted, label="predicted")
+			plt.savefig(os.path.join(plot_dir, str(i) + ".pdf"), format="pdf")
+			plt.clf()
 
 		loss = loss_fn(predicted_sequence, reversed_input)
 
@@ -74,7 +87,7 @@ def main(args):
 	torch.set_num_threads(args.cpu_count)
 	cuda_available = torch.cuda.is_available()
 
-	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), validation_split=0.1, test_split=0.1)
+	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1)
 
 	print("Loading training set")
 	training_dataset = dataset_loader.get_dataset("training")
@@ -139,7 +152,7 @@ def main(args):
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 
 				start_time = time.time()
-				validation_history = evaluate(model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
 				end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
@@ -193,6 +206,7 @@ if __name__ == "__main__":
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
 	parser.add_argument("-l", "--log_file", type=str, default="metrics.csv", help="CSV logfile. Creates path if it does not exist. Default 'metrics.csv'")
 	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
+	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
 
 	args = parser.parse_args()
 

@@ -2,6 +2,8 @@
 	- Fourier transformation --> Peaks anschauen
 	- nach preprocessing nochmal fourier transformierung und schauen ob peaks noch da sind
 
-- Effektives predicten mit teacher input
-
 - Trainieren mit fc zu Coin-Klasse, abwechselnd 
+
+== DONE ==
+
+- Effektives predicten mit teacher input

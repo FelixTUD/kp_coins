@@ -9,10 +9,11 @@ import pandas
 import h5py
 
 class CoinDataset(Dataset):
-	def __init__(self, path_to_hdf5, examples, max_length):
+	def __init__(self, path_to_hdf5, examples, max_length, shrink):
 		self.path_to_hdf5 = path_to_hdf5
 		self.examples = examples
 		self.max_length = max_length
+		self.shrink = shrink
 
 		self.data_file = None
 		self.cuda_available = torch.cuda.is_available()
@@ -67,7 +68,7 @@ class CoinDataset(Dataset):
 
 		if not self.data_file:
 			self.data_file = h5py.File(self.path_to_hdf5, "r")
-		timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:8] # Diese Art der Indizierung ist schneller
+		timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:self.shrink] # Diese Art der Indizierung ist schneller
 
 		# self.data_file.close()
 
@@ -107,8 +108,9 @@ class CoinDataset(Dataset):
 		# return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 
 class CoinDatasetLoader:
-	def __init__(self, path_to_hdf5, validation_split, test_split):
+	def __init__(self, path_to_hdf5, shrink, validation_split, test_split):
 		self.path_to_hdf5 = path_to_hdf5
+		self.shrink = shrink
 
 		self.data_file = h5py.File(path_to_hdf5, "r")
 
@@ -165,10 +167,10 @@ class CoinDatasetLoader:
 
 	def get_dataset(self, mode):
 		if mode == "training":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.training_paths, max_length=self.shortest_seq)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.training_paths, max_length=self.shortest_seq, shrink=self.shrink)
 		elif mode == "validation":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.validation_paths, max_length=self.shortest_seq)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.validation_paths, max_length=self.shortest_seq, shrink=self.shrink)
 		elif mode == "test":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.test_paths, max_length=self.shortest_seq)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.test_paths, max_length=self.shortest_seq, shrink=self.shrink)
 
 		raise Exception("Unknown mode: {}".format(mode))

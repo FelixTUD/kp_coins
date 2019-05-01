@@ -2,7 +2,7 @@
 
 #Submit this script with: sbatch thefilename
 
-#SBATCH --time=10:00:00   # walltime
+#SBATCH --time=5:00:00   # walltime
 #SBATCH --nodes=1   # number of nodes
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1      # limit to one node
@@ -15,6 +15,6 @@
 module load Python
 source /scratch/p_ml_finanzen/venv/bin/activate
 
-python /scratch/p_ml_finanzen/kp_coin/torch_coin.py -p /scratch/p_ml_finanzen/kp_coin -m train -c 0 -b 25 -l run_with_val/run1.csv
+python /scratch/p_ml_finanzen/kp_coin/torch_coin.py -p /scratch/p_ml_finanzen/kp_coin -m train -c 0 -b 25 -l run_with_val/run2.csv
 
 exit 0
