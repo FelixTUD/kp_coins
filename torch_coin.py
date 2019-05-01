@@ -20,7 +20,7 @@ def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
 def train(model, dataloader, optimizer, loss_fn):
-	model.train()
+	model = model.train()
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
@@ -43,7 +43,9 @@ def train(model, dataloader, optimizer, loss_fn):
 	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
 
 def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
-	model.eval()
+	model = model.eval()
+	model.set_eval_mode(True)
+
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
@@ -52,15 +54,10 @@ def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
 		input_tensor, reversed_input, _, _ = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-		batch_size, seq_length, feature_dim = input_tensor.shape
-
 		iterative_teacher_input = torch.empty(input_tensor.shape).to(input_tensor.device)
 		iterative_teacher_input[:, 0,:] = -1
 
-		for i in range(seq_length):
-			print(i)
-			predicted_sequence_part = model(input=input_tensor, teacher_input=iterative_teacher_input[:, i + 1,:].reshape(batch_size, i + 1, 1))
-			iterative_teacher_input[:, i + 1,:] = predicted_sequence_part.data[:, i, :]
+		predicted_sequence = model(input=input_tensor, teacher_input=iterative_teacher_input)
 
 		loss = loss_fn(predicted_sequence, reversed_input)
 
@@ -68,6 +65,7 @@ def evaluate(model, dataloader, loss_fn, start_of_sequence=-1):
 
 		del loss # Necessary?
 
+	model.set_eval_mode(False)
 	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
 
 def main(args):
@@ -140,18 +138,16 @@ def main(args):
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 
-				# start_time = time.time()
-				# validation_history = evaluate(model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
-				# end_time = time.time()
+				start_time = time.time()
+				validation_history = evaluate(model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				end_time = time.time()
 
-				# print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
-				training_epoch_loss = training_loss_history.mean()
-
-				print("Epoch {}/{}: loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"]))
-				log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
-				# print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"]))
-				# log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
+				# print("Epoch {}/{}: loss: {:.5f}".format(current_epoch + 1, num_epochs, validation_history["loss_mean"]))
+				# log_file.write("{}, {}\n".format(current_epoch + 1, validation_history["loss_mean"]))
+				print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"]))
+				log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
 				log_file.flush()
 
 

@@ -41,12 +41,36 @@ class DecoderLSTM(nn.Module):
 
 		self.activation = activation
 
+		self.eval_mode = False
+
 	def forward(self, input, initial):
-		reconstruction, _ = self.lstm(input, initial)
-		if self.activation:
-			return self.activation(self.fc(reconstruction))
+		if self.eval_mode:
+			seq_length = input.shape[1]
+
+			output = torch.empty(input.shape).to(input.device)
+
+			# Use detach() to not generate a huge flow graph and run out of memory
+			for i in range(seq_length):
+				partial_reconstruction, initial = self.lstm(input.data[:, i:i + 1, :], initial)
+				partial_reconstruction = partial_reconstruction.detach()
+				initial = (initial[0].detach(), initial[1].detach())
+
+				if self.activation:
+					output.data[:, i:i+1, :] = self.activation(self.fc(partial_reconstruction).detach()).detach().data
+				else:
+					output.data[:, i:i+1, :] = self.fc(partial_reconstruction).detach().data
+				input.data[:, i+1:i+2, :] = output.data[:, i:i+1, :]
+
+			return output
 		else:
-			return self.fc(reconstruction)
+			reconstruction, _ = self.lstm(input, initial)
+			if self.activation:
+				return self.activation(self.fc(reconstruction))
+			else:
+				return self.fc(reconstruction)
+
+	def set_eval_mode(self, toggle):
+		self.eval_mode = toggle
 
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, activation_function, use_lstm=True):
@@ -67,3 +91,6 @@ class Autoencoder(nn.Module):
 
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
+
+	def set_eval_mode(self, toggle):
+		self.decoder.set_eval_mode(toggle)
