@@ -135,7 +135,7 @@ def main(args):
 			for current_epoch in range(num_epochs):
 
 				start_time = time.time()
-				# train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss)
+				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss)
 				end_time = time.time()
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
