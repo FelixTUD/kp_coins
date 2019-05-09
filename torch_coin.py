@@ -20,12 +20,18 @@ from model import Autoencoder
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
+def calc_acc(input, target):
+	#input = nn.functional.softmax(input, 1)
+	#print(torch.argmax(input, 1))
+	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
+
 def train(model, dataloader, optimizer, loss_fn):
 	model = model.train()
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
 	loss_history_cel = np.empty(num_steps)
+	acc_history = np.empty(num_steps)
 	loss_cel = nn.CrossEntropyLoss()
 
 	for i_batch, sample_batched in enumerate(dataloader):
@@ -43,12 +49,13 @@ def train(model, dataloader, optimizer, loss_fn):
 		optimizer[0].step()
 
 		del loss # Necessary?
-
+	
 		model.set_decoder_mode(False)
 		predicted_category = model(input=input_tensor, teacher_input=None)
 
 		loss = loss_cel(input=predicted_category, target=output)
 		loss_history_cel[i_batch] = loss.item()
+		acc_history[i_batch] = calc_acc(input=predicted_category, target=output)
 
 		optimizer[1].zero_grad()
 		loss.backward()
@@ -57,7 +64,7 @@ def train(model, dataloader, optimizer, loss_fn):
 		del loss # Necessary?
 		
 
-	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
+	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history), "accuracy": acc_history.mean()}
 
 def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 	model = model.eval()
@@ -177,7 +184,7 @@ def main(args):
 				# log_file.write("{}, {}\n".format(current_epoch + 1, validation_history["loss_mean"]))
 				#print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"], train_history["loss_cel_mean"]))
 				#log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
-				print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"]))
+				print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}, accuracy:  {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"], train_history["accuracy"]))
 				log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
 				log_file.flush()
 
