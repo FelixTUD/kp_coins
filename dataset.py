@@ -81,7 +81,7 @@ class CoinDataset(Dataset):
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
 		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
 		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
-		coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin))))
+		coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin)))).long()
 
 		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 

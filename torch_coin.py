@@ -25,23 +25,39 @@ def train(model, dataloader, optimizer, loss_fn):
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
+	loss_history_cel = np.empty(num_steps)
+	loss_cel = nn.CrossEntropyLoss()
 
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
 		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
+		model.set_decoder_mode(True)
 		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
 		loss = loss_fn(predicted_sequence, reversed_input)
 		loss_history[i_batch] = loss.item()
 
-		optimizer.zero_grad()
+		optimizer[0].zero_grad()
 		loss.backward()
-		optimizer.step()
+		optimizer[0].step()
 
 		del loss # Necessary?
 
-	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
+		model.set_decoder_mode(False)
+		predicted_category = model(input=input_tensor, teacher_input=None)
+
+		loss = loss_cel(input=predicted_category, target=output)
+		loss_history_cel[i_batch] = loss.item()
+
+		optimizer[1].zero_grad()
+		loss.backward()
+		optimizer[1].step()
+
+		del loss # Necessary?
+		
+
+	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
 
 def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 	model = model.eval()
@@ -119,7 +135,7 @@ def main(args):
 
 	# model = nn.DataParallel(model, device_ids=[0, 1, 2])
 
-	opti = optim.Adam(model.parameters())
+	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param())]
 	loss_fn = custom_mse_loss
 
 	num_epochs = 50
@@ -150,17 +166,19 @@ def main(args):
 				end_time = time.time()
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+				
+				#start_time = time.time()
+				#validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				#end_time = time.time()
 
-				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
-				end_time = time.time()
-
-				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+				#print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
 				# print("Epoch {}/{}: loss: {:.5f}".format(current_epoch + 1, num_epochs, validation_history["loss_mean"]))
 				# log_file.write("{}, {}\n".format(current_epoch + 1, validation_history["loss_mean"]))
-				print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"]))
-				log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
+				#print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"], train_history["loss_cel_mean"]))
+				#log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
+				print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"]))
+				log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
 				log_file.flush()
 
 
