@@ -2,3 +2,6 @@ https://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
 https://machinelearningmastery.com/lstm-autoencoders/
 https://machinelearningmastery.com/sequence-prediction/
 https://machinelearningmastery.com/time-series-prediction-lstm-recurrent-neural-networks-python-keras/
+
+https://github.com/auDeep/auDeep
+https://www.cs.tut.fi/sgn/arg/dcase2017/documents/workshop_papers/DCASE2017Workshop_Amiriparian_172.pdf

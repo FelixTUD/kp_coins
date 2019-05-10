@@ -7,14 +7,14 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1      # limit to one node
 #SBATCH --cpus-per-task=1  # number of processor cores (i.e. threads)
-#SBATCH --partition=hpdlf
-#SBATCH --mem-per-cpu=5000M   # memory per CPU core
 #SBATCH --partition hpdlf
+#SBATCH --mem-per-cpu=5000M   # memory per CPU core
 #SBATCH -J "kp_training"   # job name
+#SBATCH -A p_ml_finanzen
 
 module load Python
 source /scratch/p_ml_finanzen/venv/bin/activate
 
-python /scratch/p_ml_finanzen/kp_coin/torch_coin.py -p /scratch/p_ml_finanzen/kp_coin -m train -c 0 -b 25 -l run_with_val/run2.csv
+python /scratch/p_ml_finanzen/kp_coin/torch_coin.py -p /scratch/p_ml_finanzen/kp_coin -m train -c 0 -b 50 -l run_with_val/run3.csv -s 1024 -hs 1024
 
 exit 0

@@ -43,7 +43,7 @@ def train(model, dataloader, optimizer, loss_fn):
 
 	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
 
-def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
+def evaluate(base_path, epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 	model = model.eval()
 	model.set_eval_mode(True)
 
@@ -51,7 +51,7 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1):
 
 	loss_history = np.empty(num_steps)
 
-	plot_dir = "plots/" + str(epoch)
+	plot_dir = os.path.join(base_path, "plots/" + str(epoch))
 	os.makedirs(plot_dir, exist_ok=True)
 
 	for i_batch, sample_batched in enumerate(dataloader):
@@ -135,6 +135,8 @@ def main(args):
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
+	base_path = os.path.join(args.path, args.identifier) 
+
 	log_file_dir = os.path.dirname(args.log_file)
 	if log_file_dir:
 		os.makedirs(log_file_dir, exist_ok=True)
@@ -152,7 +154,7 @@ def main(args):
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 
 				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				validation_history = evaluate(base_path=base_path, epoch=current_epoch + 1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
 				end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
@@ -207,7 +209,8 @@ if __name__ == "__main__":
 	parser.add_argument("-l", "--log_file", type=str, default="metrics.csv", help="CSV logfile. Creates path if it does not exist. Default 'metrics.csv'")
 	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
-	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of RNN hidden layer.")
+	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of LSTM/GRU hidden layer.")
+	parser.add_argument("-id", "--identifier", type=str, help="Unique identifier for the current run.")
 
 	args = parser.parse_args()
 
