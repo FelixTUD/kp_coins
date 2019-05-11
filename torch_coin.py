@@ -49,7 +49,7 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		loss_history[i_batch] = loss.item()
 
 		if writer:
-			writer.add_scalar("reconstruction_loss", global_step=global_step, scalar_value=loss.item())
+			writer.add_scalar("raw/loss/reconstruction", global_step=global_step, scalar_value=loss.item())
 
 		optimizer[0].zero_grad()
 		loss.backward()
@@ -66,8 +66,8 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		acc_history[i_batch] = acc
 
 		if writer:
-			writer.add_scalar("categorization_loss", global_step=global_step, scalar_value=loss.item())
-			writer.add_scalar("categorization_acc", global_step=global_step, scalar_value=acc)
+			writer.add_scalar("raw/loss/categorization", global_step=global_step, scalar_value=loss.item())
+			writer.add_scalar("raw/acc/categorization", global_step=global_step, scalar_value=acc)
 
 		optimizer[1].zero_grad()
 		loss.backward()
@@ -76,46 +76,87 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		del loss # Necessary?
 
 		global_step += 1
-		
-	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history), "accuracy": acc_history.mean()}
 
-def evaluate(base_path, epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
+	if writer:
+		writer.add_scalar("per_epoch/loss/categorization", global_step=global_step // num_steps, scalar_value=loss_history_cel.mean())
+		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step // num_steps, scalar_value=loss_history.mean())
+		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step // num_steps, scalar_value=acc_history.mean())
+			
+	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
+
+def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
 	model = model.eval()
 	model.set_eval_mode(True)
+	model.set_decoder_mode(False)
 
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
+	loss_history_cel = np.empty(num_steps)
+	acc_history = np.empty(num_steps)
+	loss_cel = nn.CrossEntropyLoss()
 
-	plot_dir = os.path.join(base_path, "plots/" + str(epoch))
-	os.makedirs(plot_dir, exist_ok=True)
+	# plot_dir = os.path.join(base_path, "plots/" + str(epoch))
+	# os.makedirs(plot_dir, exist_ok=True)
 
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
-		input_tensor, reversed_input, _, _ = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
+		input_tensor, reversed_input, _, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-		iterative_teacher_input = torch.empty(input_tensor.shape).to(input_tensor.device)
-		iterative_teacher_input[:, 0,:] = -1
+		# iterative_teacher_input = torch.empty(input_tensor.shape).to(input_tensor.device)
+		# iterative_teacher_input[:, 0,:] = -1
 
-		predicted_sequence = model(input=input_tensor, teacher_input=iterative_teacher_input)
+		# predicted_sequence = model(input=input_tensor, teacher_input=iterative_teacher_input)
 
-		for i in range(input_tensor.shape[0]):
-			np_input = input_tensor[i].cpu().numpy().reshape(input_tensor.shape[1])
-			np_predicted = np.flip(predicted_sequence[i].detach().cpu().numpy().reshape(predicted_sequence.shape[1]))
+		# for i in range(input_tensor.shape[0]):
+		# 	np_input = input_tensor[i].cpu().numpy().reshape(input_tensor.shape[1])
+		# 	np_predicted = np.flip(predicted_sequence[i].detach().cpu().numpy().reshape(predicted_sequence.shape[1]))
 
-			plt.plot(np_input, label="input")
-			plt.plot(np_predicted, label="predicted")
-			plt.savefig(os.path.join(plot_dir, str(i_batch * num_steps + i) + ".png"), format="png")
-			plt.clf()
+		# 	plt.plot(np_input, label="input")
+		# 	plt.plot(np_predicted, label="predicted")
+		# 	plt.savefig(os.path.join(plot_dir, str(i_batch * num_steps + i) + ".png"), format="png")
+		# 	plt.clf()
 
-		loss = loss_fn(predicted_sequence, reversed_input)
+		# loss = loss_fn(predicted_sequence, reversed_input)
 
-		loss_history[i_batch] = loss.item()
+		# loss_history[i_batch] = loss.item()
+
+		predicted_category = model(input=input_tensor, teacher_input=None)
+
+		loss = loss_cel(input=predicted_category, target=output)
+		loss_history_cel[i_batch] = loss.item()
+		acc = calc_acc(input=predicted_category, target=output)
+		acc_history[i_batch] = acc
+
+		if writer:
+			# writer.add_scalar("val_raw/loss/categorization", global_step=global_step, scalar_value=loss.item())
+			writer.add_scalar("val_raw/acc/categorization", global_step=global_step, scalar_value=acc)
 
 		del loss # Necessary?
 
+	if writer:
+		writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step // num_steps, scalar_value=loss_history_cel.mean())
+		# writer.add_scalar("val_per_epoch/loss/reconstruction", global_step=global_step // num_steps, scalar_value=loss_history.mean())
+		writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step // num_steps, scalar_value=acc_history.mean())
+
 	model.set_eval_mode(False)
-	return {"loss_mean": loss_history.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history)}
+	return {"loss_mean": 0, "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
+
+def get_dict_string(d, prefix=""):
+	result = prefix
+	for k, v in d.items():
+		result += " {}: {:.4f},".format(k, v)
+
+	return result[:-1]
+
+def get_comment_string(args):
+	comment = "::d_" if args.debug else ""
+	comment += "b{}_".format(args.batch_size)
+	comment += "hs{}_".format(args.hidden_size)
+	comment += "lstm_" if args.use_lstm else "gru_"
+	comment += "s{}_".format(args.shrink)
+	comment += "e{}".format(args.epochs)
+	return comment
 
 def main(args):
 	print("CPU count: {}".format(args.cpu_count))
@@ -123,7 +164,7 @@ def main(args):
 	torch.set_num_threads(max(1, args.cpu_count))
 	cuda_available = torch.cuda.is_available()
 
-	writer = SummaryWriter()
+	writer = SummaryWriter(comment=get_comment_string(args))
 
 	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
 
@@ -191,9 +232,9 @@ def main(args):
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 				
-				#start_time = time.time()
-				#validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
-				#end_time = time.time()
+				start_time = time.time()
+				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+				end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
@@ -201,9 +242,13 @@ def main(args):
 				# log_file.write("{}, {}\n".format(current_epoch + 1, validation_history["loss_mean"]))
 				#print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"], train_history["loss_cel_mean"]))
 				#log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
-				print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}, accuracy:  {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"], train_history["accuracy"]))
-				log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
-				log_file.flush()
+				# print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}, accuracy:  {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"], train_history["accuracy"]))
+				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+				print(get_dict_string(train_history, "train: "))
+				print(get_dict_string(validation_history, "val: "))
+				print("---")
+				# log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
+				# log_file.flush()
 
 
 	if args.mode == "infer":
