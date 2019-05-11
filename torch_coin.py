@@ -125,7 +125,7 @@ def main(args):
 
 	writer = SummaryWriter()
 
-	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, debug_mode=args.debug)
+	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
 
 	print("Loading training set")
 	training_dataset = dataset_loader.get_dataset("training")
@@ -150,7 +150,7 @@ def main(args):
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid())
+	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid(), args=args)
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()

@@ -10,11 +10,12 @@ import h5py
 import random
 
 class CoinDataset(Dataset):
-	def __init__(self, path_to_hdf5, examples, max_length, shrink):
+	def __init__(self, path_to_hdf5, examples, max_length, shrink, args):
 		self.path_to_hdf5 = path_to_hdf5
 		self.examples = examples
 		self.max_length = max_length
 		self.shrink = shrink
+		self.args = args
 
 		self.data_file = None
 		self.cuda_available = torch.cuda.is_available()
@@ -29,20 +30,28 @@ class CoinDataset(Dataset):
 		return len(self.examples)
 
 	def get_class_for_coin(self, coin):
-		if coin == 1:
-			return 0
-		elif coin == 2:
-			return 1
-		elif coin == 5:
-			return 0 #2
-		elif coin == 20:
-			return 3
-		elif coin == 50:
-			return 4
-		elif coin == 100:
-			return 1 #5
-		elif coin == 200:
-			return 6
+		if self.args.debug:
+			if coin == 5:
+				return 0 
+			elif coin == 100:
+				return 1 
+			
+			raise Exception("Unknown coin type encountered in debug mode")
+		else:
+			if coin == 1:
+				return 0
+			elif coin == 2:
+				return 1
+			elif coin == 5:
+				return 2
+			elif coin == 20:
+				return 3
+			elif coin == 50:
+				return 4
+			elif coin == 100:
+				return 5
+			elif coin == 200:
+				return 6
 
 		raise Exception("Unknown coin type: {}".format(coin))
 
@@ -99,11 +108,14 @@ class CoinDataset(Dataset):
 		return self.data_cache[idx]
 		
 class CoinDatasetLoader:
-	def __init__(self, path_to_hdf5, shrink, validation_split, test_split, debug_mode=False):
+	def __init__(self, path_to_hdf5, shrink, validation_split, test_split, args):
 		# Debug mode only returns data for coins of values 5 and 100. Each with 100 training examples
 
 		self.path_to_hdf5 = path_to_hdf5
 		self.shrink = shrink
+		self.args = args
+
+		debug_mode = args.debug
 
 		self.data_file = h5py.File(path_to_hdf5, "r")
 
@@ -160,10 +172,10 @@ class CoinDatasetLoader:
 
 	def get_dataset(self, mode):
 		if mode == "training":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.training_paths, max_length=self.shortest_seq, shrink=self.shrink)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.training_paths, max_length=self.shortest_seq, shrink=self.shrink, args=self.args)
 		elif mode == "validation":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.validation_paths, max_length=self.shortest_seq, shrink=self.shrink)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.validation_paths, max_length=self.shortest_seq, shrink=self.shrink, args=self.args)
 		elif mode == "test":
-			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.test_paths, max_length=self.shortest_seq, shrink=self.shrink)
+			return CoinDataset(path_to_hdf5=self.path_to_hdf5, examples=self.test_paths, max_length=self.shortest_seq, shrink=self.shrink, args=self.args)
 
 		raise Exception("Unknown mode: {}".format(mode))
