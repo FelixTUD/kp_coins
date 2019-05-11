@@ -1,5 +1,5 @@
 
-#Requirements
+# Requirements
 
 
 ```
@@ -27,7 +27,7 @@ torchvision==0.2.2.post3
 Werkzeug==0.15.2
 ```
 
-#Usage
+# Usage
 ```
 torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
               [-lstm USE_LSTM] [-l LOG_FILE] [-p PATH] [-s SHRINK]
