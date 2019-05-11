@@ -127,7 +127,7 @@ class DecoderLSTMPred(nn.Module):
 
 	def get_predictor_param(self):
 		#return list(self.lstm.parameters()) + list(self.pred_fc_h.parameters()) + list(self.pred_fc_h2.parameters()) + list(self.pred_fc_c.parameters()) + list(self.pred_fc_c2.parameters())
-		return list(self.lstm.parameters()) + list(self.pred_fc_c.parameters())
+		return list(self.lstm.parameters()) + list(self.pred_fc_h.parameters()) + list(self.pred_fc_h2.parameters()) + list(self.pred_fc_c2.parameters()) + list(self.pred_fc_c.parameters())
 
 	def set_decoder_mode(self, toggle):
 		self.is_decoder = toggle
