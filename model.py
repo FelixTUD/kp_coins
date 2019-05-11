@@ -83,10 +83,10 @@ class DecoderLSTMPred(nn.Module):
 		fc_hidden_dim = hidden_dim * 2
 		self.pred_fc_h = nn.Linear(hidden_dim, fc_hidden_dim)
 		self.relu = nn.ReLU()
-		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, 7)
+		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, 2)
 
 		self.pred_fc_c = nn.Linear(hidden_dim, fc_hidden_dim)
-		self.pred_fc_c2 = nn.Linear(fc_hidden_dim, 7)
+		self.pred_fc_c2 = nn.Linear(fc_hidden_dim, 2)
 
 		self.activation = activation
 
