@@ -180,9 +180,9 @@ def main(args):
 				#validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
 				#end_time = time.time()
 
-				start_time = time.time()
-				validation_history = evaluate(base_path=base_path, epoch=current_epoch + 1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
-				end_time = time.time()
+				#start_time = time.time()
+				#validation_history = evaluate(base_path=base_path, epoch=current_epoch + 1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
+				#end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
