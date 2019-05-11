@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+from torch.utils.tensorboard import SummaryWriter
 
 import numpy as np
 import multiprocessing
@@ -25,7 +26,10 @@ def calc_acc(input, target):
 	#print(torch.argmax(input, 1))
 	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
 
-def train(model, dataloader, optimizer, loss_fn):
+global_step = 0
+
+def train(model, dataloader, optimizer, loss_fn, writer=None):
+	global global_step
 	model = model.train()
 	num_steps = len(dataloader)
 
@@ -44,6 +48,9 @@ def train(model, dataloader, optimizer, loss_fn):
 		loss = loss_fn(predicted_sequence, reversed_input)
 		loss_history[i_batch] = loss.item()
 
+		if writer:
+			writer.add_scalar("reconstruction_loss", global_step=global_step, scalar_value=loss.item())
+
 		optimizer[0].zero_grad()
 		loss.backward()
 		optimizer[0].step()
@@ -55,18 +62,24 @@ def train(model, dataloader, optimizer, loss_fn):
 
 		loss = loss_cel(input=predicted_category, target=output)
 		loss_history_cel[i_batch] = loss.item()
-		acc_history[i_batch] = calc_acc(input=predicted_category, target=output)
+		acc = calc_acc(input=predicted_category, target=output)
+		acc_history[i_batch] = acc
+
+		if writer:
+			writer.add_scalar("categorization_loss", global_step=global_step, scalar_value=loss.item())
+			writer.add_scalar("categorization_acc", global_step=global_step, scalar_value=acc)
 
 		optimizer[1].zero_grad()
 		loss.backward()
 		optimizer[1].step()
 
 		del loss # Necessary?
-		
 
+		global_step += 1
+		
 	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "loss_high": np.max(loss_history), "loss_low": np.min(loss_history), "accuracy": acc_history.mean()}
 
-def evaluate(base_path, epoch, model, dataloader, loss_fn, start_of_sequence=-1):
+def evaluate(base_path, epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
 	model = model.eval()
 	model.set_eval_mode(True)
 
@@ -107,10 +120,12 @@ def evaluate(base_path, epoch, model, dataloader, loss_fn, start_of_sequence=-1)
 def main(args):
 	print("CPU count: {}".format(args.cpu_count))
 
-	torch.set_num_threads(args.cpu_count)
+	torch.set_num_threads(max(1, args.cpu_count))
 	cuda_available = torch.cuda.is_available()
 
-	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1)
+	writer = SummaryWriter()
+
+	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, debug_mode=args.debug)
 
 	print("Loading training set")
 	training_dataset = dataset_loader.get_dataset("training")
@@ -127,9 +142,9 @@ def main(args):
 	validation_batch_size = args.batch_size
 	test_batch_size = args.batch_size
 
-	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=args.cpu_count, drop_last=True)	
-	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=args.cpu_count, drop_last=(validation_batch_size > 1))
-	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=args.cpu_count, drop_last=(test_batch_size > 1))
+	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
+	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
+	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
 	training_dataset_length = int(len(training_dataset) / training_batch_size)
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
@@ -145,7 +160,7 @@ def main(args):
 	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param())]
 	loss_fn = custom_mse_loss
 
-	num_epochs = 50
+	num_epochs = args.epochs
 
 	print(model)
 	print("Num parameters: {}".format(model.num_parameters()))
@@ -171,7 +186,7 @@ def main(args):
 			for current_epoch in range(num_epochs):
 
 				start_time = time.time()
-				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss)
+				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, writer=writer)
 				end_time = time.time()
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
@@ -179,10 +194,6 @@ def main(args):
 				#start_time = time.time()
 				#validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
 				#end_time = time.time()
-
-				start_time = time.time()
-				validation_history = evaluate(base_path=base_path, epoch=current_epoch + 1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss)
-				end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
@@ -227,6 +238,8 @@ def main(args):
 		plt.savefig("val_pred_plot.pdf", format="pdf")
 		plt.show()
 
+	writer.close()
+
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
@@ -240,6 +253,8 @@ if __name__ == "__main__":
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of LSTM/GRU hidden layer.")
 	parser.add_argument("-id", "--identifier", type=str, help="Unique identifier for the current run.")
+	parser.add_argument("-d", "--debug", action="store_true")
+	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
 
 	args = parser.parse_args()
 

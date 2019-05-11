@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas 
 import h5py
+import random
 
 class CoinDataset(Dataset):
 	def __init__(self, path_to_hdf5, examples, max_length, shrink):
@@ -33,13 +34,13 @@ class CoinDataset(Dataset):
 		elif coin == 2:
 			return 1
 		elif coin == 5:
-			return 2
+			return 0 #2
 		elif coin == 20:
 			return 3
 		elif coin == 50:
 			return 4
 		elif coin == 100:
-			return 5
+			return 1 #5
 		elif coin == 200:
 			return 6
 
@@ -70,6 +71,15 @@ class CoinDataset(Dataset):
 			self.data_file = h5py.File(self.path_to_hdf5, "r")
 		timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:self.shrink] # Diese Art der Indizierung ist schneller
 
+		# y = None
+		# x = np.linspace(1, 700000, 700000)[::self.shrink]
+		# if coin == "5":
+		# 	y = np.sin(50*x)
+		# else:
+		# 	y = np.sin(150*x)
+
+		# timeseries = y
+
 		# self.data_file.close()
 
 		timeseries = self.min_max_scale(timeseries)
@@ -87,28 +97,11 @@ class CoinDataset(Dataset):
 
 	def __getitem__(self, idx):
 		return self.data_cache[idx]
-		# coin, gain, number = self.examples[idx]
-
-		# if not self.data_file:
-		# 	self.data_file = h5py.File(self.path_to_hdf5, "r")
-		# timeseries = self.data_file[coin][gain][number]["values"][:][:self.max_length:8] # Diese Art der Indizierung ist schneller
-
-		# # self.data_file.close()
-
-		# timeseries = self.min_max_scale(timeseries)
-		# reversed_timeseries = np.flip(timeseries).copy() # Negative strides nicht supported bon pytorch, deshalb copy
-		# teacher_input = np.zeros(reversed_timeseries.shape)
-		# teacher_input[1:] = reversed_timeseries[1:]
-
-		# reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
-		# teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
-		# timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
-		# coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin))))
-
-		# return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
-
+		
 class CoinDatasetLoader:
-	def __init__(self, path_to_hdf5, shrink, validation_split, test_split):
+	def __init__(self, path_to_hdf5, shrink, validation_split, test_split, debug_mode=False):
+		# Debug mode only returns data for coins of values 5 and 100. Each with 100 training examples
+
 		self.path_to_hdf5 = path_to_hdf5
 		self.shrink = shrink
 
@@ -118,35 +111,35 @@ class CoinDatasetLoader:
 		self.validation_paths = []
 		self.test_paths = []
 
-		self.shortest_seq = np.inf
+		self.shortest_seq = np.inf if not debug_mode else 700000
 
 		# Load states for training, validation and test set
-		for coin in self.data_file.keys():
-			for gain in self.data_file[coin].keys():
-				example_set = np.array(list(self.data_file[coin][gain]))
+		coin_keys = self.data_file.keys() if not debug_mode else ["5", "100"]
+		for coin in coin_keys:
+			gain_keys = self.data_file[coin].keys()
+			data_paths = []
+			for gain in gain_keys:
+				data_paths.extend([(gain, x) for x in self.data_file[coin][gain].keys()])
 
-				self.shortest_seq = np.minimum(self.shortest_seq_in_example_set(coin, gain, example_set), self.shortest_seq) 
+			num_validation_examples = int(len(data_paths) * validation_split) if not debug_mode else 10
+			num_test_examples = int(len(data_paths) * test_split) if not debug_mode else 10
+			num_training_examples = len(data_paths) - num_validation_examples - num_test_examples if not debug_mode else 100
 
-				num_validation_examples = int(len(example_set) * validation_split)
-				num_test_examples = int(len(example_set) * test_split)
-				num_training_examples = len(example_set) - num_validation_examples - num_test_examples
+			random.shuffle(data_paths)
 
-				validation_examples = np.random.choice(example_set, num_validation_examples, replace=False)
-				example_set = np.delete(example_set, validation_examples)
+			validation_examples = data_paths[:num_validation_examples]
+			test_examples = data_paths[num_validation_examples:num_validation_examples+num_test_examples]
+			training_examples = data_paths[num_validation_examples+num_test_examples:num_validation_examples+num_test_examples+num_training_examples]
 
-				test_examples = np.random.choice(example_set, num_test_examples, replace=False)
-				example_set = np.delete(example_set, test_examples)
-
-				training_examples = example_set
-
-				self.training_paths += [(coin, gain, x) for x in list(training_examples)]
-				self.validation_paths += [(coin, gain, x) for x in list(validation_examples)]
-				self.test_paths += [(coin, gain, x) for x in list(test_examples)]
-
+			self.training_paths += [(coin,) + x for x in training_examples]
+			self.validation_paths += [(coin,) + x for x in validation_examples]
+			self.test_paths += [(coin,) + x for x in test_examples]
+				
 		self.shortest_seq = int(self.shortest_seq)
 
 		print("Shortest sequence length: {}".format(self.shortest_seq))
 
+	
 	def shortest_seq_in_example_set(self, coin, gain, example_set):
 		shortest = np.inf
 
