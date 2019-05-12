@@ -113,7 +113,7 @@ class CoinDataset(Dataset):
 
 	def get_data_for_coin_type(self, coin, num_examples):
 		data = self.label_mapping[coin]
-		data = map(lambda x: self[x], data)
+		data = list(map(lambda x: self[x], data[:num_examples]))
 
 		return data
 		

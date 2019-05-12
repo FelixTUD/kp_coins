@@ -263,23 +263,33 @@ def main(args):
 		from sklearn.manifold import TSNE
 		assert (args.weights), "No weights file specified!"
 
-		model.load_state_dict(torch.load(args.weights))
+		device = torch.device('cpu')
+		model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
 		# Use training examples for now to test
-		num_examples_per_class = 10
+		num_examples_per_class = 25
 		coins = [5, 100]
 		colors = ['b', 'r']
 
-		for coin, color in zip(coins, colors):
+		plot_colors = []
+		[plot_colors.extend(x*num_examples_per_class) for x in colors]
+
+		i = 0
+		all_encodings = torch.empty(num_examples_per_class*len(coins), args.hidden_size)
+		for coin in coins:
 			coin_data = training_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
 
 			for data in coin_data:
+				print("\rCoin {}: {}/{}".format(coin, (i+1) % (num_examples_per_class + 1), num_examples_per_class), end="")
 				input_tensor = data["input"]
 				encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
-				encoded_input = encoded_input.numpy()
 
-				embedded = TSNE(n_components=2).fit_transform(encoded_input)
-				plt.scatter(embedded[:,0], embedded[:,1], c=[color]*(2 if args.use_lstm else 1), alpha=0.5)
+				all_encodings[i] = encoded_input[0]
+				i += 1
+			print("")
+		embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
+
+		plt.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
 		plt.show()
 
 	if args.mode == "infer":
@@ -320,7 +330,7 @@ if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', ''tsne' or infer'. Default 'train'")
+	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne' or infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of cpus to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=20, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
