@@ -144,8 +144,10 @@ class Autoencoder(nn.Module):
 		super(Autoencoder, self).__init__()
 
 		self.args = args
+		self.use_lstm = use_lstm
+		self.hidden_dim = hidden_dim
 
-		if use_lstm:
+		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
 			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
 			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, activation_function, args)
@@ -153,8 +155,18 @@ class Autoencoder(nn.Module):
 			self.encoder = EncoderGRU(hidden_dim, feature_dim)
 			self.decoder = DecoderGRU(hidden_dim, feature_dim, activation_function)
 
-	def forward(self, input, teacher_input):
+	def forward(self, input, teacher_input=None, return_hidden=False):
 		_, last_hidden = self.encoder(input)
+		if return_hidden:
+			if self.use_lstm:
+				result = torch.empty(2, self.hidden_dim)
+
+				result[0] = last_hidden[0].detach().cpu()
+				result[1] = last_hidden[1].detach().cpu()
+				return result
+			else:
+				return last_hidden.detach().cpu()
+		
 		reconstructed = self.decoder(teacher_input, last_hidden)
 
 		return reconstructed

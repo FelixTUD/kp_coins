@@ -165,6 +165,12 @@ def main(args):
 	cuda_available = torch.cuda.is_available()
 
 	writer = SummaryWriter(comment=get_comment_string(args))
+	model_save_dir_name = writer.log_dir.split("/")[-1]
+	model_save_path = None
+
+	if args.save:
+		model_save_path = os.path.join(args.save, model_save_dir_name)
+		os.makedirs(model_save_path)
 
 	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
 
@@ -250,6 +256,31 @@ def main(args):
 				# log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
 				# log_file.flush()
 
+				if args.save:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+
+	if args.mode == "tsne":
+		from sklearn.manifold import TSNE
+		assert (args.weights), "No weights file specified!"
+
+		model.load_state_dict(torch.load(args.weights))
+		model.eval()
+		# Use training examples for now to test
+		num_examples_per_class = 10
+		coins = [5, 100]
+		colors = ['b', 'r']
+
+		for coin, color in zip(coins, colors):
+			coin_data = training_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+			for data in coin_data:
+				input_tensor = data["input"]
+				encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+				encoded_input = encoded_input.numpy()
+
+				embedded = TSNE(n_components=2).fit_transform(encoded_input)
+				plt.scatter(embedded[:,0], embedded[:,1], c=[color]*(2 if args.use_lstm else 1), alpha=0.5)
+		plt.show()
 
 	if args.mode == "infer":
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
@@ -289,7 +320,7 @@ if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train' or 'infer'. Default 'train'")
+	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', ''tsne' or infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of cpus to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=20, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
@@ -300,6 +331,8 @@ if __name__ == "__main__":
 	parser.add_argument("-id", "--identifier", type=str, help="Unique identifier for the current run.")
 	parser.add_argument("-d", "--debug", action="store_true")
 	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
+	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
+	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
 
 	args = parser.parse_args()
 

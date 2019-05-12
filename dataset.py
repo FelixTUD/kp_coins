@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import pandas 
 import h5py
 import random
+from collections import defaultdict
 
 class CoinDataset(Dataset):
 	def __init__(self, path_to_hdf5, examples, max_length, shrink, args):
@@ -21,6 +22,7 @@ class CoinDataset(Dataset):
 		self.cuda_available = torch.cuda.is_available()
 
 		self.data_cache = []
+		self.label_mapping = defaultdict(list)
 
 		for i in range(len(examples)):
 			print("Preparing {}/{}".format(i + 1, len(examples)), end="\r")
@@ -92,7 +94,7 @@ class CoinDataset(Dataset):
 		# self.data_file.close()
 
 		timeseries = self.min_max_scale(timeseries)
-		reversed_timeseries = np.flip(timeseries).copy() # Negative strides nicht supported von pytorch, deshalb copy()
+		reversed_timeseries = np.flip(timeseries).copy() # Negative strides (noch) nicht supported von pytorch, deshalb copy()
 		teacher_input = np.zeros(reversed_timeseries.shape)
 		teacher_input[1:] = reversed_timeseries[1:]
 		teacher_input[0] = -1
@@ -102,10 +104,18 @@ class CoinDataset(Dataset):
 		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
 		coin_class = self.convert_to_tensor(np.array(self.get_class_for_coin(int(coin)))).long()
 
+		self.label_mapping[int(coin)].append(idx)
+
 		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 
 	def __getitem__(self, idx):
 		return self.data_cache[idx]
+
+	def get_data_for_coin_type(self, coin, num_examples):
+		data = self.label_mapping[coin]
+		data = map(lambda x: self[x], data)
+
+		return data
 		
 class CoinDatasetLoader:
 	def __init__(self, path_to_hdf5, shrink, validation_split, test_split, args):

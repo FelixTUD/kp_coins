@@ -30,13 +30,14 @@ Werkzeug==0.15.2
 # Usage
 ```
 torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
-              [-lstm USE_LSTM] [-l LOG_FILE] [-p PATH] [-s SHRINK]
-              [-hs HIDDEN_SIZE] [-id IDENTIFIER] [-d] [-e EPOCHS]
+                     [-lstm USE_LSTM] [-l LOG_FILE] [-p PATH] [-s SHRINK]
+                     [-hs HIDDEN_SIZE] [-id IDENTIFIER] [-d] [-e EPOCHS]
+                     [--save SAVE] [-w WEIGHTS]
 
 optional arguments:
   -h, --help            show this help message and exit
-  -m MODE, --mode MODE  Mode of the script. Can be either 'train' or 'infer'.
-                        Default 'train'
+  -m MODE, --mode MODE  Mode of the script. Can be either 'train', ''tsne' or
+                        infer'. Default 'train'
   -c CPU_COUNT, --cpu_count CPU_COUNT
                         Number of cpus to use. Default 0
   -b BATCH_SIZE, --batch_size BATCH_SIZE
@@ -58,4 +59,8 @@ optional arguments:
   -d, --debug
   -e EPOCHS, --epochs EPOCHS
                         Number of epochs
+  --save SAVE           Specify save folder for weight files. Default: None
+  -w WEIGHTS, --weights WEIGHTS
+                        Model weights file. Only used for 'tsne' mode.
+                        Default: None
 ```
