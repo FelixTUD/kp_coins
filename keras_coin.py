@@ -1,6 +1,6 @@
 from keras.models import Model
 from keras.layers import Input, LSTM, Dense, CuDNNLSTM
-from keras.utils import Sequence
+from keras.utils import Sequence, to_categorical
 
 import os
 import h5py
@@ -38,31 +38,33 @@ class TrainingGenerator(Sequence):
 		exmaple_min = np.min(example_data)
 		example_data = (example_data - exmaple_min) / (example_max - exmaple_min)
 
-		return example_data.reshape(example_data.size, 1)
+		return to_categorical(np.where(self.coins==coin_choice)[0][0], self.n_classes), example_data.reshape(example_data.size, 1)
 
 	def __getitem__(self, idx):
 		input_result_batch = np.empty((self.batch_size, self.clip_length//self.shrink+1, 1))
 		teacher_result_batch = np.empty((self.batch_size, self.clip_length//self.shrink+1, 1))
 		output_result_batch = np.empty((self.batch_size, self.clip_length//self.shrink+1, 1))
+		classification_result_batch = np.empty((self.batch_size, self.n_classes))
 
 		for batch_i in range(self.batch_size):
-			random_example = self.get_random_example()
+			classification, random_example = self.get_random_example()
 			input_result_batch[batch_i] = random_example
 			teacher_input = np.flip(random_example, 0)[:-1]
 			teacher_input = np.insert(teacher_input, 0, [-1])
 			teacher_result_batch[batch_i] = teacher_input.reshape(teacher_input.size, 1)
 			output_result_batch[batch_i] = np.flip(random_example, 0)
+			classification_result_batch[batch_i] = classification
 
-		return [input_result_batch, teacher_result_batch], output_result_batch
+		return [input_result_batch, teacher_result_batch], {"decoder_out" : output_result_batch, "classification_out": classification_result_batch}
 
 	def __len__(self):
 		return 200
 
 
-def generate_model(hidden_dim, feature_size):
+def generate_model(hidden_dim, feature_size, n_classes):
 	# Define an input sequence and process it.
 	encoder_inputs = Input(shape=(None, feature_size))
-	encoder = CuDNNLSTM(hidden_dim, return_state=True)
+	encoder = LSTM(hidden_dim, return_state=True)
 	encoder_outputs, state_h, state_c = encoder(encoder_inputs)
 	# We discard `encoder_outputs` and only keep the states.
 	encoder_states = [state_h, state_c]
@@ -72,22 +74,37 @@ def generate_model(hidden_dim, feature_size):
 	# We set up our decoder to return full output sequences,
 	# and to return internal states as well. We don't use the 
 	# return states in the training model, but we will use them in inference.
-	decoder_lstm = CuDNNLSTM(hidden_dim, return_sequences=True, return_state=True)
+	decoder_lstm = LSTM(hidden_dim, return_sequences=True, return_state=True)
 	decoder_outputs, _, _ = decoder_lstm(decoder_inputs,
 	                                     initial_state=encoder_states)
-	decoder_dense = Dense(feature_size, activation='sigmoid')
+	decoder_dense = Dense(feature_size, activation='sigmoid', name="decoder_out")
 	decoder_outputs = decoder_dense(decoder_outputs)
+
+	classificator_fc = Dense(n_classes, activation="softmax", name="classification_out")
+	classificator = classificator_fc(state_h)
 
 	# Define the model that will turn
 	# `encoder_input_data` & `decoder_input_data` into `decoder_target_data`
-	model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+	model = Model(inputs=[encoder_inputs, decoder_inputs], outputs=[decoder_outputs, classificator])
 
-	model.compile(optimizer="adam", loss="mse", metrics=["accuracy"])
+	losses = {
+		"classification_out": "categorical_crossentropy",
+		"decoder_out": "mse"
+	}
+
+	metrics = {
+		"classification_out": ["categorical_accuracy"],
+		"decoder_out": []
+	}
+
+	model.compile(optimizer="adam", loss=losses, metrics=metrics)
+
+	print(model.summary())
 
 	return model
 
 def main(args):
-	model = generate_model(args.hidden_size, 1)
+	model = generate_model(args.hidden_size, 1, n_classes=2)
 
 	training_generator = TrainingGenerator(batch_size=args.batch_size, clip_length=700000, shrink=args.shrink, file_path=args.file_path, coin_class_override=[5, 100])
 
