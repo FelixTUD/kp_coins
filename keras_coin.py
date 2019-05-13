@@ -1,6 +1,7 @@
 from keras.models import Model
 from keras.layers import Input, LSTM, Dense, CuDNNLSTM
 from keras.utils import Sequence, to_categorical
+from keras import backend as K
 
 import os
 import h5py
@@ -62,9 +63,15 @@ class TrainingGenerator(Sequence):
 
 
 def generate_model(hidden_dim, feature_size, n_classes):
+	gpu_available = len(list(K.tensorflow_backend._get_available_gpus())) > 0
+
 	# Define an input sequence and process it.
 	encoder_inputs = Input(shape=(None, feature_size))
-	encoder = LSTM(hidden_dim, return_state=True)
+	encoder = None
+	if gpu_available:
+		encoder = CuDNNLSTM(hidden_dim, return_state=True)
+	else:
+		encoder = LSTM(hidden_dim, return_state=True)
 	encoder_outputs, state_h, state_c = encoder(encoder_inputs)
 	# We discard `encoder_outputs` and only keep the states.
 	encoder_states = [state_h, state_c]
@@ -74,7 +81,11 @@ def generate_model(hidden_dim, feature_size, n_classes):
 	# We set up our decoder to return full output sequences,
 	# and to return internal states as well. We don't use the 
 	# return states in the training model, but we will use them in inference.
-	decoder_lstm = LSTM(hidden_dim, return_sequences=True, return_state=True)
+	decoder_lstm = None
+	if gpu_available:
+		decoder_lstm = CuDNNLSTM(hidden_dim, return_sequences=True, return_state=True)
+	else:
+		decoder_lstm = LSTM(hidden_dim, return_sequences=True, return_state=True)
 	decoder_outputs, _, _ = decoder_lstm(decoder_inputs,
 	                                     initial_state=encoder_states)
 	decoder_dense = Dense(feature_size, activation='sigmoid', name="decoder_out")
