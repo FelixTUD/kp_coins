@@ -150,7 +150,7 @@ def get_dict_string(d, prefix=""):
 	return result[:-1]
 
 def get_comment_string(args):
-	comment = "::d_" if args.debug else ""
+	comment = "d_" if args.debug else ""
 	comment += "b{}_".format(args.batch_size)
 	comment += "hs{}_".format(args.hidden_size)
 	comment += "lstm_" if args.use_lstm else "gru_"
