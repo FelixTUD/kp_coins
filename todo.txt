@@ -2,6 +2,10 @@
 	- Fourier transformation --> Peaks anschauen
 	- nach preprocessing nochmal fourier transformierung und schauen ob peaks noch da sind
 
+- Input Normalisierung über alle Daten 
+- Abschneiden vorn und hinten validieren 
+- Nicht alle n Werte nehmen, sondern Abschnitte
+
 == DONE ==
 
 - Trainieren mit fc zu Coin-Klasse, abwechselnd 
