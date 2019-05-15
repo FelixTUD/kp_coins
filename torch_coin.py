@@ -26,10 +26,13 @@ def calc_acc(input, target):
 	#print(torch.argmax(input, 1))
 	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
 
-global_step = 0
+global_step_train = 0
+global_step_valid = 0
+global_fig_count = 0
 
 def train(model, dataloader, optimizer, loss_fn, writer=None):
-	global global_step
+	global global_step_train
+	global global_fig_count
 	model = model.train()
 	num_steps = len(dataloader)
 
@@ -49,7 +52,14 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		loss_history[i_batch] = loss.item()
 
 		if writer:
-			writer.add_scalar("raw/loss/reconstruction", global_step=global_step, scalar_value=loss.item())
+			writer.add_scalar("raw/loss/reconstruction", global_step=global_step_train, scalar_value=loss.item())
+
+			fig = plt.figure(0)
+			plt.plot(reversed_input[0].cpu().numpy().reshape(input_tensor.shape[1]), label="expected")
+			plt.plot(predicted_sequence[0].detach().cpu().numpy().reshape(input_tensor.shape[1]), label="predicted")
+			plt.legend()
+			writer.add_figure("raw/fig/reconstruction", figure=fig, global_step=global_fig_count)
+			global_fig_count += 1
 
 		optimizer[0].zero_grad()
 		loss.backward()
@@ -66,8 +76,8 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		acc_history[i_batch] = acc
 
 		if writer:
-			writer.add_scalar("raw/loss/categorization", global_step=global_step, scalar_value=loss.item())
-			writer.add_scalar("raw/acc/categorization", global_step=global_step, scalar_value=acc)
+			writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
+			writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
 
 		optimizer[1].zero_grad()
 		loss.backward()
@@ -75,16 +85,17 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 
 		del loss # Necessary?
 
-		global_step += 1
+		global_step_train += 1
 
 	if writer:
-		writer.add_scalar("per_epoch/loss/categorization", global_step=global_step // num_steps, scalar_value=loss_history_cel.mean())
-		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step // num_steps, scalar_value=loss_history.mean())
-		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step // num_steps, scalar_value=acc_history.mean())
+		writer.add_scalar("per_epoch/loss/categorization", global_step=global_step_train // num_steps, scalar_value=loss_history_cel.mean())
+		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step_train // num_steps, scalar_value=loss_history.mean())
+		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step_train // num_steps, scalar_value=acc_history.mean())
 			
 	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
 
 def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
+	global global_step_valid
 	model = model.eval()
 	model.set_eval_mode(True)
 	model.set_decoder_mode(False)
@@ -130,14 +141,16 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=Non
 
 		if writer:
 			# writer.add_scalar("val_raw/loss/categorization", global_step=global_step, scalar_value=loss.item())
-			writer.add_scalar("val_raw/acc/categorization", global_step=global_step, scalar_value=acc)
+			writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
 
 		del loss # Necessary?
 
+		global_step_valid += 1
+
 	if writer:
-		writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step // num_steps, scalar_value=loss_history_cel.mean())
-		# writer.add_scalar("val_per_epoch/loss/reconstruction", global_step=global_step // num_steps, scalar_value=loss_history.mean())
-		writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step // num_steps, scalar_value=acc_history.mean())
+		writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step_valid // num_steps, scalar_value=loss_history_cel.mean())
+		# writer.add_scalar("val_per_epoch/loss/reconstruction", global_step=global_step_valid // num_steps, scalar_value=loss_history.mean())
+		writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step_valid // num_steps, scalar_value=acc_history.mean())
 
 	model.set_eval_mode(False)
 	return {"loss_mean": 0, "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
@@ -197,7 +210,7 @@ def main(args):
 	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, use_lstm=args.use_lstm, activation_function=nn.Sigmoid(), args=args)
+	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, args=args)
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -343,6 +356,8 @@ if __name__ == "__main__":
 	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
+	parser.add_argument("--rosa", action="store_true", help="Use librosa to normalize and trim data.")
+	parser.add_argument("--top_db", type=int, default=10, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
 
 	args = parser.parse_args()
 

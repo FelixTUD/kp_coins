@@ -73,20 +73,19 @@ class DecoderLSTM(nn.Module):
 		self.eval_mode = toggle
 
 class DecoderLSTMPred(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, activation, args):
+	def __init__(self, hidden_dim, feature_dim, args):
 		super(DecoderLSTMPred, self).__init__()
 		self.is_decoder = True
 		self.args = args
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
+		self.time_dist_act = nn.Tanh() if args.rosa else nn.Sigmoid()
 
 		fc_hidden_dim = hidden_dim * 2
 		self.pred_fc_h = nn.Linear(hidden_dim, fc_hidden_dim)
 		self.relu = nn.ReLU()
 		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, 2 if self.args.debug else 7)
-
-		self.activation = activation
 
 		self.eval_mode = False
 
@@ -102,20 +101,14 @@ class DecoderLSTMPred(nn.Module):
 				partial_reconstruction = partial_reconstruction.detach()
 				initial = (initial[0].detach(), initial[1].detach())
 
-				if self.activation:
-					output.data[:, i:i+1, :] = self.activation(self.fc(partial_reconstruction).detach()).detach().data
-				else:
-					output.data[:, i:i+1, :] = self.fc(partial_reconstruction).detach().data
+				output.data[:, i:i+1, :] = self.time_dist_act(self.fc(partial_reconstruction).detach()).detach().data
 				input.data[:, i+1:i+2, :] = output.data[:, i:i+1, :]
 
 			return output
 		else:
 			if self.is_decoder:
 				reconstruction, _ = self.lstm(input, initial)
-				if self.activation:
-					return self.activation(self.fc(reconstruction))
-				else:
-					return self.fc(reconstruction)
+				return self.time_dist_act(self.fc(reconstruction))
 			else:
 				return self.pred_fc_h2(self.relu(self.pred_fc_h(initial[0][0])))
 				# return self.pred_fc_c(initial[1][0])
@@ -135,20 +128,19 @@ class DecoderLSTMPred(nn.Module):
 
 
 class Autoencoder(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, activation_function, args, use_lstm=True):
+	def __init__(self, hidden_dim, feature_dim, args):
 		super(Autoencoder, self).__init__()
 
-		self.args = args
-		self.use_lstm = use_lstm
+		self.use_lstm = args.use_lstm
 		self.hidden_dim = hidden_dim
 
 		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
 			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
-			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, activation_function, args)
+			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, args)
 		else:
 			self.encoder = EncoderGRU(hidden_dim, feature_dim)
-			self.decoder = DecoderGRU(hidden_dim, feature_dim, activation_function)
+			self.decoder = DecoderGRU(hidden_dim, feature_dim)
 
 	def forward(self, input, teacher_input=None, return_hidden=False):
 		_, last_hidden = self.encoder(input)
