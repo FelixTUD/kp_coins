@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pack_sequence, pad_packed_sequence
+from torch.utils.data._utils.collate import default_collate
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,6 +11,129 @@ import pandas
 import h5py
 import random
 from collections import defaultdict
+
+class Collator:
+	def __call__(self, batch):
+		inputs = [x["input"] for x in batch]
+		reversed_inputs = [x["reversed_input"] for x in batch]
+		teacher_inputs = [x["teacher_input"] for x in batch]
+		labels = [x["label"] for x in batch]
+
+		return {"input": pack_sequence(inputs, enforce_sorted=False), 
+				"reversed_input": pad_packed_sequence(pack_sequence(reversed_inputs, enforce_sorted=False), batch_first=True)[0], 
+				"teacher_input": pack_sequence(teacher_inputs, enforce_sorted=False), 
+				"label": default_collate(labels)}
+
+class NewCoinDataset(Dataset):
+	def __init__(self, args):
+		import librosa as rosa 
+		self.rosa = rosa 		# Multiprocessing bullshit
+
+		self.shrink = args.shrink
+		self.top_db = args.top_db
+		self.path_to_hdf5 = "coin_data/data.hdf5" #args.path_to_hdf5
+		self.use_cuda = torch.cuda.is_available()
+		self.preloaded_data = []
+
+		self.data_file = h5py.File(self.path_to_hdf5, "r")
+
+		if args.coins:
+			self.coins = list(map(str, args.coins))
+		else:
+			self.coins = list(self.data_file.keys())
+		print("Sampling from coin classes: {}".format(self.coins)) 
+
+		if args.num_examples:
+			assert (args.num_examples <= self.get_min_number_of_coins())
+			self.min_num_coins = args.num_examples
+		else:
+			self.min_num_coins = self.get_min_number_of_coins()
+
+		print("Sampling equal number of coins for each class: {} examples".format(self.min_num_coins))
+		
+		self.sample_space = self.get_sample_space()
+
+		print("Preloading data to {} memory ...".format("gpu" if self.use_cuda else "cpu"))
+		self.preload_samples()
+
+		print("Shuffeling preloaded data ...")
+		random.shuffle(self.preloaded_data)
+
+	def preprocess_time_series(self, timeseries):
+		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
+
+		min = np.min(timeseries)
+		max = np.max(timeseries)
+		return (2*(timeseries - min) / (max - min)) - 1
+
+	def convert_to_tensor(self, data):
+		tensor = torch.from_numpy(data).float()
+
+		if self.use_cuda:
+			tensor = tensor.cuda()
+
+		return tensor
+
+	def convert_to_one_hot_index(self, coin):
+		return np.array(self.coins.index(coin))
+
+	def generate_data(self, timeseries, coin):
+		reversed_timeseries = np.flip(timeseries).copy() # Negative strides (noch) nicht supported von pytorch, deshalb copy()
+		teacher_input = np.zeros(reversed_timeseries.shape)
+		teacher_input[1:] = reversed_timeseries[1:]
+		teacher_input[0] = -1
+
+		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
+		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
+		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
+		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
+
+		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
+
+	def preload_samples(self):
+		for coin, samples in self.sample_space.items():
+			for index, (gain, example) in enumerate(samples):
+				print("\rPreloading coin {}: {}/{}".format(coin, index + 1, len(samples)), end="")
+
+				timeseries = self.data_file[coin][gain][example]["values"][:]
+				timeseries = self.preprocess_time_series(timeseries)
+
+				self.preloaded_data.append(self.generate_data(timeseries, coin))
+
+			print("")
+
+	def get_sample_space(self):
+		coin_samples = defaultdict(list)
+
+		for coin in self.coins:
+			current_samples = []
+
+			for gain in self.data_file[coin].keys():
+				for example in self.data_file[coin][gain]:
+					current_samples.append((gain, example))
+
+			coin_samples[coin] = random.sample(current_samples, self.min_num_coins)
+
+		return coin_samples
+
+	def get_min_number_of_coins(self):
+		num_coin_examples = defaultdict(lambda: 0)
+
+		for coin in self.coins:
+			for gain in self.data_file[coin].keys():
+				num_coin_examples[coin] += len(self.data_file[coin][gain].keys())
+
+		min_num_coins_class = min(num_coin_examples, key=num_coin_examples.get)
+		min_num_coins = num_coin_examples[min_num_coins_class]
+		del num_coin_examples
+
+		return min_num_coins
+
+	def __len__(self):
+		return len(self.preloaded_data)
+		
+	def __getitem__(self, idx):
+		return self.preloaded_data[idx]
 
 class CoinDataset(Dataset):
 	def __init__(self, path_to_hdf5, examples, max_length, shrink, args):
@@ -119,6 +244,7 @@ class CoinDataset(Dataset):
 			timeseries = self.min_max_scale(timeseries)
 
 		coin_class = np.array(self.get_class_for_coin(int(coin)))
+
 
 		self.label_mapping[int(coin)].append(idx)
 

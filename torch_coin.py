@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
+from torch.nn.utils.rnn import pad_packed_sequence
 
 import numpy as np
 import multiprocessing
@@ -15,7 +16,7 @@ import time
 import os
 import matplotlib.pyplot as plt
 
-from dataset import CoinDatasetLoader, CoinDataset
+from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
 from model import Autoencoder
 
 def custom_mse_loss(y_pred, y_true):
@@ -53,8 +54,14 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 			writer.add_scalar("raw/loss/reconstruction", global_step=global_step_train, scalar_value=loss.item())
 
 			fig = plt.figure(0)
-			plt.plot(reversed_input[0].cpu().numpy().reshape(input_tensor.shape[1]), label="expected")
-			plt.plot(predicted_sequence[0].detach().cpu().numpy().reshape(input_tensor.shape[1]), label="predicted")
+			one_input = reversed_input[0].detach().cpu().numpy()
+			one_input = one_input.reshape(one_input.shape[0])
+
+			one_output = predicted_sequence[0].detach().cpu().numpy()
+			one_output = one_output.reshape(one_output.shape[0])
+			
+			plt.plot(one_input, label="expected")
+			plt.plot(one_output, label="predicted")
 			plt.legend()
 			writer.add_figure("raw/fig/reconstruction", figure=fig, global_step=global_fig_count)
 			global_fig_count += 1
@@ -169,7 +176,8 @@ def get_comment_string(args):
 def main(args):
 	print("CPU count: {}".format(args.cpu_count))
 
-	torch.set_num_threads(max(1, args.cpu_count))
+	# torch.set_num_threads(max(1, args.cpu_count))
+	torch.set_num_threads(0)
 	cuda_available = torch.cuda.is_available()
 
 	writer = SummaryWriter(comment=get_comment_string(args))
@@ -180,30 +188,33 @@ def main(args):
 		model_save_path = os.path.join(args.save, model_save_dir_name)
 		os.makedirs(model_save_path)
 
-	dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
+	# dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
 
-	print("Loading training set")
-	training_dataset = dataset_loader.get_dataset("training")
-	print("Loading validation set")
-	validation_dataset = dataset_loader.get_dataset("validation")
-	print("Loading test set")
-	test_dataset = dataset_loader.get_dataset("test")
+	# print("Loading training set")
+	# training_dataset = dataset_loader.get_dataset("training")
+	training_dataset = NewCoinDataset(args)
+	# print("Loading validation set")
+	# validation_dataset = dataset_loader.get_dataset("validation")
+	# print("Loading test set")
+	# test_dataset = dataset_loader.get_dataset("test")
 
-	print("Training dataset length: {}".format(len(training_dataset)))
-	print("Validation dataset length: {}".format(len(validation_dataset)))
-	print("Test dataset length: {}".format(len(test_dataset)))
+	# print("Training dataset length: {}".format(len(training_dataset)))
+	# print("Validation dataset length: {}".format(len(validation_dataset)))
+	# print("Test dataset length: {}".format(len(test_dataset)))
 
 	training_batch_size = args.batch_size
 	validation_batch_size = args.batch_size
 	test_batch_size = args.batch_size
 
-	training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
-	validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
-	test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
+	# training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
+	training_dataloader = DataLoader(training_dataset, batch_size=20, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
+	
+	# validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
+	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
 	training_dataset_length = int(len(training_dataset) / training_batch_size)
-	validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
-	test_dataset_length = int(len(test_dataset) / test_batch_size)
+	# validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
+	# test_dataset_length = int(len(test_dataset) / test_batch_size)
 
 	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, args=args)
 	if cuda_available:
@@ -219,7 +230,7 @@ def main(args):
 	print("Num parameters: {}".format(model.num_parameters()))
 
 	training_loss_history = np.empty(training_dataset_length)
-	validation_loss_history = np.empty(validation_dataset_length)
+	# validation_loss_history = np.empty(validation_dataset_length)
 
 	num_epochs_no_improvements = 0
 	best_val_loss = np.inf
@@ -242,15 +253,15 @@ def main(args):
 
 				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 				
-				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-				end_time = time.time()
+				# start_time = time.time()
+				# validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+				# end_time = time.time()
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
 				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
 				print(get_dict_string(train_history, "train: "))
-				print(get_dict_string(validation_history, "val: "))
+				# print(get_dict_string(validation_history, "val: "))
 				print("---")
 
 				if args.save:
@@ -341,6 +352,8 @@ if __name__ == "__main__":
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
 	parser.add_argument("--rosa", action="store_true", help="Use librosa to normalize and trim data.")
 	parser.add_argument("--top_db", type=int, default=10, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
+	parser.add_argument("--coins", nargs="+", default=None, help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
+	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 
 	args = parser.parse_args()
 

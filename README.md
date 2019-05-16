@@ -29,14 +29,15 @@ Werkzeug==0.15.2
 
 # Usage
 ```
-torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
+usage: torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
                      [-lstm USE_LSTM] [-l LOG_FILE] [-p PATH] [-s SHRINK]
-                     [-hs HIDDEN_SIZE] [-id IDENTIFIER] [-d] [-e EPOCHS]
-                     [--save SAVE] [-w WEIGHTS]
+                     [-hs HIDDEN_SIZE] [-d] [-e EPOCHS] [--save SAVE]
+                     [-w WEIGHTS] [--rosa] [--top_db TOP_DB]
+                     [--coins COINS [COINS ...]] [--num_examples NUM_EXAMPLES]
 
 optional arguments:
   -h, --help            show this help message and exit
-  -m MODE, --mode MODE  Mode of the script. Can be either 'train', ''tsne' or
+  -m MODE, --mode MODE  Mode of the script. Can be either 'train', 'tsne' or
                         infer'. Default 'train'
   -c CPU_COUNT, --cpu_count CPU_COUNT
                         Number of cpus to use. Default 0
@@ -54,8 +55,6 @@ optional arguments:
                         input.
   -hs HIDDEN_SIZE, --hidden_size HIDDEN_SIZE
                         Size of LSTM/GRU hidden layer.
-  -id IDENTIFIER, --identifier IDENTIFIER
-                        Unique identifier for the current run.
   -d, --debug
   -e EPOCHS, --epochs EPOCHS
                         Number of epochs
@@ -63,4 +62,14 @@ optional arguments:
   -w WEIGHTS, --weights WEIGHTS
                         Model weights file. Only used for 'tsne' mode.
                         Default: None
+  --rosa                Use librosa to normalize and trim data.
+  --top_db TOP_DB       Only used if --rosa is specified. Value under which
+                        audio is considered as silence at beginning/end.
+  --coins COINS [COINS ...]
+                        Use only specified coin types. Possible values: 1, 2,
+                        5, 20, 50, 100, 200. Default uses all coins.
+  --num_examples NUM_EXAMPLES
+                        Number of used coin data examples from each class for
+                        training. Default uses the minimum number of all used
+                        classes.
 ```
