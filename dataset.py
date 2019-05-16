@@ -131,7 +131,7 @@ class CoinDataset(Dataset):
 
 		if self.use_rosa:
 			import librosa as rosa
-			if args.batch_size > 1:
+			if self.args.batch_size > 1:
 				timeseries = rosa.util.fix_length(timeseries, self.longest_timeseries)
 			timeseries = self.minus_one_plus_one_scale(timeseries)
 
