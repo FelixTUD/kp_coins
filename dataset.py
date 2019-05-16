@@ -93,7 +93,6 @@ class CoinDataset(Dataset):
 		max = np.max(timeseries)
 		return (2*(timeseries - min) / (max - min)) - 1
 
-
 	def convert_to_tensor(self, data):
 		tensor = torch.from_numpy(data).float()
 
@@ -199,7 +198,7 @@ class CoinDatasetLoader:
 		self.validation_paths = []
 		self.test_paths = []
 
-		self.shortest_seq = np.inf if not debug_mode else 700000
+		self.shortest_seq =  700000
 
 		# Load states for training, validation and test set
 		coin_keys = self.data_file.keys() if not debug_mode else ["5", "100"]
@@ -222,11 +221,8 @@ class CoinDatasetLoader:
 			self.training_paths += [(coin,) + x for x in training_examples]
 			self.validation_paths += [(coin,) + x for x in validation_examples]
 			self.test_paths += [(coin,) + x for x in test_examples]
-				
-		self.shortest_seq = int(self.shortest_seq)
 
 		print("Shortest sequence length: {}".format(self.shortest_seq))
-
 	
 	def shortest_seq_in_example_set(self, coin, gain, example_set):
 		shortest = np.inf

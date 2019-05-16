@@ -22,8 +22,6 @@ def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
 def calc_acc(input, target):
-	#input = nn.functional.softmax(input, 1)
-	#print(torch.argmax(input, 1))
 	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
 
 global_step_train = 0
@@ -106,9 +104,6 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=Non
 	loss_history_cel = np.empty(num_steps)
 	acc_history = np.empty(num_steps)
 	loss_cel = nn.CrossEntropyLoss()
-
-	# plot_dir = os.path.join(base_path, "plots/" + str(epoch))
-	# os.makedirs(plot_dir, exist_ok=True)
 
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
@@ -215,8 +210,6 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	# model = nn.DataParallel(model, device_ids=[0, 1, 2])
-
 	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param())]
 	loss_fn = custom_mse_loss
 
@@ -232,8 +225,6 @@ def main(args):
 	best_val_loss = np.inf
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
-
-	base_path = os.path.join(args.path, args.identifier) 
 
 	log_file_dir = os.path.dirname(args.log_file)
 	if log_file_dir:
@@ -257,17 +248,10 @@ def main(args):
 
 				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
-				# print("Epoch {}/{}: loss: {:.5f}".format(current_epoch + 1, num_epochs, validation_history["loss_mean"]))
-				# log_file.write("{}, {}\n".format(current_epoch + 1, validation_history["loss_mean"]))
-				#print("Epoch {}/{}: loss: {:.5f}, val_loss: {:.5f}, cel_loss: {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], validation_history["loss_mean"], train_history["loss_cel_mean"]))
-				#log_file.write("{}, {}, {}\n".format(current_epoch + 1, train_history["loss_mean"], validation_history["loss_mean"]))
-				# print("Epoch {}/{}: loss: {:.5f}, cel_loss: {:.5f}, accuracy:  {:.5f}".format(current_epoch + 1, num_epochs, train_history["loss_mean"], train_history["loss_cel_mean"], train_history["accuracy"]))
 				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
 				print(get_dict_string(train_history, "train: "))
 				print(get_dict_string(validation_history, "val: "))
 				print("---")
-				# log_file.write("{}, {}\n".format(current_epoch + 1, train_history["loss_mean"]))
-				# log_file.flush()
 
 				if args.save:
 					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
@@ -351,7 +335,6 @@ if __name__ == "__main__":
 	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of LSTM/GRU hidden layer.")
-	parser.add_argument("-id", "--identifier", type=str, help="Unique identifier for the current run.")
 	parser.add_argument("-d", "--debug", action="store_true")
 	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
