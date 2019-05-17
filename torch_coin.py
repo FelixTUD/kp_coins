@@ -171,7 +171,8 @@ def get_comment_string(args):
 	comment += "hs{}_".format(args.hidden_size)
 	comment += "lstm_" if args.use_lstm else "gru_"
 	comment += "s{}_".format(args.shrink)
-	comment += "e{}".format(args.epochs)
+	comment += "e{}_".format(args.epochs)
+	comment += "c{}".format(args.coins)
 	return comment
 
 def main(args):
@@ -326,7 +327,7 @@ if __name__ == "__main__":
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
 	parser.add_argument("--top_db", type=int, default=10, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
-	parser.add_argument("--coins", nargs="+", default=None, help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
+	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
 
