@@ -15,6 +15,7 @@
 module load Python
 source /scratch/p_kpml/venv/bin/activate
 
-python /scratch/p_kpml/playground_marvin/torch_coin.py -b 10 -e 150 -p /scratch/p_kpml/playground_marvin/coin_data/data.hdf5 --top_db 5 --coins 1 100 -hs 64 -s 16 -c 4
+tensorboard --logdir=/scratch/p_kpml/playground_marvin/runs --port=6666 > /dev/null &
+python /scratch/p_kpml/playground_marvin/torch_coin.py -b 10 -e 150 -p /scratch/p_kpml/playground_marvin/coin_data/data.hdf5 --top_db 5 --coins 1 100 50 -hs 64 -s 16 -c 4
 
 exit 0
