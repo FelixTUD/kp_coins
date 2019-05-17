@@ -29,7 +29,7 @@ global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
 
-def train(model, dataloader, optimizer, loss_fn, writer=None):
+def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
 	global global_step_train
 	global global_fig_count
 	model = model.train()
@@ -53,18 +53,19 @@ def train(model, dataloader, optimizer, loss_fn, writer=None):
 		if writer:
 			writer.add_scalar("raw/loss/reconstruction", global_step=global_step_train, scalar_value=loss.item())
 
-			fig = plt.figure(0)
-			one_input = reversed_input[0].detach().cpu().numpy()
-			one_input = one_input.reshape(one_input.shape[0])
+			if save_fig:
+				fig = plt.figure(0)
+				one_input = reversed_input[0].detach().cpu().numpy()
+				one_input = one_input.reshape(one_input.shape[0])
 
-			one_output = predicted_sequence[0].detach().cpu().numpy()
-			one_output = one_output.reshape(one_output.shape[0])
-			
-			plt.plot(one_input, label="expected")
-			plt.plot(one_output, label="predicted")
-			plt.legend()
-			writer.add_figure("raw/fig/reconstruction", figure=fig, global_step=global_fig_count)
-			global_fig_count += 1
+				one_output = predicted_sequence[0].detach().cpu().numpy()
+				one_output = one_output.reshape(one_output.shape[0])
+				
+				plt.plot(one_input, label="expected")
+				plt.plot(one_output, label="predicted")
+				plt.legend()
+				writer.add_figure("raw/fig/reconstruction", figure=fig, global_step=global_fig_count)
+				global_fig_count += 1
 
 		optimizer[0].zero_grad()
 		loss.backward()
@@ -223,7 +224,7 @@ def main(args):
 		for current_epoch in range(num_epochs):
 
 			start_time = time.time()
-			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, writer=writer)
+			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
 			end_time = time.time()
 
 			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
@@ -327,6 +328,7 @@ if __name__ == "__main__":
 	parser.add_argument("--top_db", type=int, default=10, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
 	parser.add_argument("--coins", nargs="+", default=None, help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
+	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
 
 	args = parser.parse_args()
 
