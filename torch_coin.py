@@ -208,7 +208,7 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param())]
+	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.01, eps=1e-7)]
 	loss_fn = custom_mse_loss
 
 	num_epochs = args.epochs
