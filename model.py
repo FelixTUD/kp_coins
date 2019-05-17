@@ -108,10 +108,13 @@ class DecoderLSTMPred(nn.Module):
 		else:
 			if self.is_decoder:
 				reconstruction, _ = self.lstm(input, initial)
-				unpacked, _ = nn.utils.rnn.pad_packed_sequence(reconstruction, batch_first=True) # [1] is tensor of original lengths
-				predicted =  self.time_dist_act(self.fc(unpacked))
+				if type(reconstruction) is nn.utils.rnn.PackedSequence:
+					unpacked, _ = nn.utils.rnn.pad_packed_sequence(reconstruction, batch_first=True) # [1] is tensor of original lengths
+					predicted =  self.time_dist_act(self.fc(unpacked))
 
-				return predicted
+					return predicted
+				else:
+					return self.time_dist_act(self.fc(reconstruction))					
 			else:
 				return self.pred_fc_h2(self.relu(self.pred_fc_h(initial[0][0])))
 				# return self.pred_fc_c(initial[1][0])

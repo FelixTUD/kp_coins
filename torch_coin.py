@@ -176,8 +176,7 @@ def get_comment_string(args):
 def main(args):
 	print("CPU count: {}".format(args.cpu_count))
 
-	# torch.set_num_threads(max(1, args.cpu_count))
-	torch.set_num_threads(0)
+	torch.set_num_threads(max(1, args.cpu_count))
 	cuda_available = torch.cuda.is_available()
 
 	writer = SummaryWriter(comment=get_comment_string(args))
@@ -188,35 +187,21 @@ def main(args):
 		model_save_path = os.path.join(args.save, model_save_dir_name)
 		os.makedirs(model_save_path)
 
-	# dataset_loader = CoinDatasetLoader(path_to_hdf5=os.path.join(args.path, "coin_data/data.hdf5"), shrink=args.shrink, validation_split=0.1, test_split=0.1, args=args)
+	complete_dataset = NewCoinDataset(args)
+	num_examples = len(complete_dataset)
+	validation_dataset_size = int(args.val_split * num_examples)
 
-	# print("Loading training set")
-	# training_dataset = dataset_loader.get_dataset("training")
-	training_dataset = NewCoinDataset(args)
-	# print("Loading validation set")
-	# validation_dataset = dataset_loader.get_dataset("validation")
-	# print("Loading test set")
-	# test_dataset = dataset_loader.get_dataset("test")
-
-	# print("Training dataset length: {}".format(len(training_dataset)))
-	# print("Validation dataset length: {}".format(len(validation_dataset)))
+	training_dataset, validation_dataset = torch.utils.data.random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
+	
+	print("Training dataset length: {}".format(len(training_dataset)))
+	print("Validation dataset length: {}".format(len(validation_dataset)))
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
-	training_batch_size = args.batch_size
-	validation_batch_size = args.batch_size
-	test_batch_size = args.batch_size
-
-	# training_dataloader = DataLoader(training_dataset, batch_size=training_batch_size, shuffle=True, num_workers=0, drop_last=True)	
-	training_dataloader = DataLoader(training_dataset, batch_size=20, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
-	
-	# validation_dataloader = DataLoader(validation_dataset, batch_size=validation_batch_size, shuffle=True, num_workers=0, drop_last=(validation_batch_size > 1))
+	training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
+	validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
-	training_dataset_length = int(len(training_dataset) / training_batch_size)
-	# validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
-	# test_dataset_length = int(len(test_dataset) / test_batch_size)
-
-	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=training_dataset.get_num_loaded_coins(), args=args)
+	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -228,9 +213,6 @@ def main(args):
 
 	print(model)
 	print("Num parameters: {}".format(model.num_parameters()))
-
-	training_loss_history = np.empty(training_dataset_length)
-	# validation_loss_history = np.empty(validation_dataset_length)
 
 	num_epochs_no_improvements = 0
 	best_val_loss = np.inf
@@ -246,15 +228,15 @@ def main(args):
 
 			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 			
-			# start_time = time.time()
-			# validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-			# end_time = time.time()
+			start_time = time.time()
+			validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+			end_time = time.time()
 
 			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
 			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
 			print(get_dict_string(train_history, "train: "))
-			# print(get_dict_string(validation_history, "val: "))
+			print(get_dict_string(validation_history, "val: "))
 			print("---")
 
 			if args.save:
@@ -332,10 +314,11 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne' or infer'. Default 'train'")
-	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of cpus to use. Default 0")
+	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=20, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
-	parser.add_argument("-p", "--path", type=str, default="./", help="Path to hdf5 data file.")
+	parser.add_argument("--val_split", type=float, default=0.1, help="Validation split. Default is 0.1")
+	parser.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of LSTM/GRU hidden layer.")
 	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
