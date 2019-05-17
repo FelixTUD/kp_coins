@@ -25,14 +25,14 @@ tb-nightly==1.14.0a20190511
 torch==1.1.0
 torchvision==0.2.2.post3
 Werkzeug==0.15.2
+librosa==0.6.3
 ```
 
 # Usage
 ```
-usage: torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
-                     [-lstm USE_LSTM] [-l LOG_FILE] [-p PATH] [-s SHRINK]
-                     [-hs HIDDEN_SIZE] [-d] [-e EPOCHS] [--save SAVE]
-                     [-w WEIGHTS] [--rosa] [--top_db TOP_DB]
+torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
+                     [-lstm USE_LSTM] [-p PATH] [-s SHRINK] [-hs HIDDEN_SIZE]
+                     [-e EPOCHS] [--save SAVE] [-w WEIGHTS] [--top_db TOP_DB]
                      [--coins COINS [COINS ...]] [--num_examples NUM_EXAMPLES]
 
 optional arguments:
@@ -45,24 +45,18 @@ optional arguments:
                         Batch size. Default 1
   -lstm USE_LSTM, --use_lstm USE_LSTM
                         Use lstm or gru. Default True = use lstm
-  -l LOG_FILE, --log_file LOG_FILE
-                        CSV logfile. Creates path if it does not exist.
-                        Default 'metrics.csv'
-  -p PATH, --path PATH  Path to working directory, used as base dataset path
-                        and base log file path. Default ./
+  -p PATH, --path PATH  Path to hdf5 data file.
   -s SHRINK, --shrink SHRINK
                         Shrinking factor. Selects data every s steps from
                         input.
   -hs HIDDEN_SIZE, --hidden_size HIDDEN_SIZE
                         Size of LSTM/GRU hidden layer.
-  -d, --debug
   -e EPOCHS, --epochs EPOCHS
                         Number of epochs
   --save SAVE           Specify save folder for weight files. Default: None
   -w WEIGHTS, --weights WEIGHTS
                         Model weights file. Only used for 'tsne' mode.
                         Default: None
-  --rosa                Use librosa to normalize and trim data.
   --top_db TOP_DB       Only used if --rosa is specified. Value under which
                         audio is considered as silence at beginning/end.
   --coins COINS [COINS ...]

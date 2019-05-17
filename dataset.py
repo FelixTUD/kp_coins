@@ -31,7 +31,7 @@ class NewCoinDataset(Dataset):
 
 		self.shrink = args.shrink
 		self.top_db = args.top_db
-		self.path_to_hdf5 = "coin_data/data.hdf5" #args.path_to_hdf5
+		self.path_to_hdf5 = args.path
 		self.use_cuda = torch.cuda.is_available()
 		self.preloaded_data = []
 
@@ -58,6 +58,9 @@ class NewCoinDataset(Dataset):
 
 		print("Shuffeling preloaded data ...")
 		random.shuffle(self.preloaded_data)
+
+	def get_num_loaded_coins(self):
+		return len(self.coins)
 
 	def preprocess_time_series(self, timeseries):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]

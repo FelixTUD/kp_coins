@@ -165,8 +165,8 @@ def get_dict_string(d, prefix=""):
 	return result[:-1]
 
 def get_comment_string(args):
-	comment = "d_" if args.debug else ""
-	comment += "b{}_".format(args.batch_size)
+	comment = "b{}_".format(args.batch_size)
+	comment += "db{}_".format(args.top_db)
 	comment += "hs{}_".format(args.hidden_size)
 	comment += "lstm_" if args.use_lstm else "gru_"
 	comment += "s{}_".format(args.shrink)
@@ -216,7 +216,7 @@ def main(args):
 	# validation_dataset_length = int(len(validation_dataset) / validation_batch_size)
 	# test_dataset_length = int(len(test_dataset) / test_batch_size)
 
-	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, args=args)
+	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=training_dataset.get_num_loaded_coins(), args=args)
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -237,35 +237,28 @@ def main(args):
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
-	log_file_dir = os.path.dirname(args.log_file)
-	if log_file_dir:
-		os.makedirs(log_file_dir, exist_ok=True)
-
 	if args.mode == "train":
-		with open(os.path.join(args.path, args.log_file), "w") as log_file:
-			log_file.write("epoch, loss, val_loss\n")
+		for current_epoch in range(num_epochs):
 
-			for current_epoch in range(num_epochs):
+			start_time = time.time()
+			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, writer=writer)
+			end_time = time.time()
 
-				start_time = time.time()
-				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, writer=writer)
-				end_time = time.time()
+			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+			
+			# start_time = time.time()
+			# validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+			# end_time = time.time()
 
-				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-				
-				# start_time = time.time()
-				# validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-				# end_time = time.time()
+			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
-				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+			print(get_dict_string(train_history, "train: "))
+			# print(get_dict_string(validation_history, "val: "))
+			print("---")
 
-				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-				print(get_dict_string(train_history, "train: "))
-				# print(get_dict_string(validation_history, "val: "))
-				print("---")
-
-				if args.save:
-					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+			if args.save:
+				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
@@ -342,15 +335,12 @@ if __name__ == "__main__":
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of cpus to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=20, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
-	parser.add_argument("-l", "--log_file", type=str, default="metrics.csv", help="CSV logfile. Creates path if it does not exist. Default 'metrics.csv'")
-	parser.add_argument("-p", "--path", type=str, default="./", help="Path to working directory, used as base dataset path and base log file path. Default ./")
+	parser.add_argument("-p", "--path", type=str, default="./", help="Path to hdf5 data file.")
 	parser.add_argument("-s", "--shrink", type=int, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, help="Size of LSTM/GRU hidden layer.")
-	parser.add_argument("-d", "--debug", action="store_true")
 	parser.add_argument("-e", "--epochs", type=int, default=50, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
-	parser.add_argument("--rosa", action="store_true", help="Use librosa to normalize and trim data.")
 	parser.add_argument("--top_db", type=int, default=10, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
 	parser.add_argument("--coins", nargs="+", default=None, help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")

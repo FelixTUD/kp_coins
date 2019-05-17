@@ -73,19 +73,19 @@ class DecoderLSTM(nn.Module):
 		self.eval_mode = toggle
 
 class DecoderLSTMPred(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, args):
+	def __init__(self, hidden_dim, feature_dim, num_coins, args):
 		super(DecoderLSTMPred, self).__init__()
 		self.is_decoder = True
 		self.args = args
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
-		self.time_dist_act = nn.Tanh() if args.rosa else nn.Sigmoid()
+		self.time_dist_act = nn.Tanh()
 
 		fc_hidden_dim = hidden_dim * 2
 		self.pred_fc_h = nn.Linear(hidden_dim, fc_hidden_dim)
 		self.relu = nn.ReLU()
-		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, 2 if self.args.debug else 7)
+		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, num_coins)
 
 		self.eval_mode = False
 
@@ -131,7 +131,7 @@ class DecoderLSTMPred(nn.Module):
 
 
 class Autoencoder(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, args):
+	def __init__(self, hidden_dim, feature_dim, num_coins, args):
 		super(Autoencoder, self).__init__()
 
 		self.use_lstm = args.use_lstm
@@ -140,7 +140,7 @@ class Autoencoder(nn.Module):
 		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
 			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
-			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, args)
+			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, num_coins, args)
 		else:
 			self.encoder = EncoderGRU(hidden_dim, feature_dim)
 			self.decoder = DecoderGRU(hidden_dim, feature_dim)
