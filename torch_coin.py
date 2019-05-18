@@ -29,7 +29,7 @@ global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
 
-def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
+def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, train_autoencoder=True, train_categorizer=True):
 	global global_step_train
 	global global_fig_count
 	model = model.train()
@@ -67,9 +67,10 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
 				writer.add_figure("raw/fig/reconstruction", figure=fig, global_step=global_fig_count)
 				global_fig_count += 1
 
-		optimizer[0].zero_grad()
-		loss.backward()
-		optimizer[0].step()
+		if train_autoencoder:
+			optimizer[0].zero_grad()
+			loss.backward()
+			optimizer[0].step()
 
 		del loss # Necessary?
 	
@@ -85,9 +86,10 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
 			writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
 			writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
 
-		optimizer[1].zero_grad()
-		loss.backward()
-		optimizer[1].step()
+		if train_categorizer:
+			optimizer[1].zero_grad()
+			loss.backward()
+			optimizer[1].step()
 
 		del loss # Necessary?
 
@@ -222,27 +224,72 @@ def main(args):
 	no_improvements_min_epochs = 10
 
 	if args.mode == "train":
-		for current_epoch in range(num_epochs):
+		if args.split:
+			for current_epoch in range(num_epochs):
 
-			start_time = time.time()
-			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
-			end_time = time.time()
+				start_time = time.time()
+				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_categorizer=False)
+				end_time = time.time()
 
-			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-			
-			start_time = time.time()
-			validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-			end_time = time.time()
+				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+				
+				start_time = time.time()
+				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+				end_time = time.time()
 
-			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
-			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-			print(get_dict_string(train_history, "train: "))
-			print(get_dict_string(validation_history, "val: "))
-			print("---")
+				print("Autoencoder train Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+				print(get_dict_string(train_history, "train: "))
+				print(get_dict_string(validation_history, "val: "))
+				print("---")
 
-			if args.save:
-				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+				if args.save:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+			for current_epoch in range(num_epochs):
+
+				start_time = time.time()
+				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_autoencoder=False)
+				end_time = time.time()
+
+				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+				
+				start_time = time.time()
+				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+				end_time = time.time()
+
+				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+
+				print("Categorizer Train Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+				print(get_dict_string(train_history, "train: "))
+				print(get_dict_string(validation_history, "val: "))
+				print("---")
+
+				if args.save:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+		else:
+			for current_epoch in range(num_epochs):
+
+				start_time = time.time()
+				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
+				end_time = time.time()
+
+				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+				
+				start_time = time.time()
+				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+				end_time = time.time()
+
+				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+
+				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+				print(get_dict_string(train_history, "train: "))
+				print(get_dict_string(validation_history, "val: "))
+				print("---")
+
+				if args.save:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+		
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
@@ -330,6 +377,7 @@ if __name__ == "__main__":
 	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
+	parser.add_argument("--split", type=bool, default=False, help="Split training in num of epochs autoencoder and num of epochs categorizer training")
 
 	args = parser.parse_args()
 
