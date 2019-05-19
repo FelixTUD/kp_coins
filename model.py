@@ -81,6 +81,7 @@ class DecoderLSTMPred(nn.Module):
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 		self.time_dist_act = nn.Tanh()
+		self.sigmoid = nn.Sigmoid()
 
 		fc_hidden_dim = hidden_dim * 2
 		self.bn_h1 = nn.BatchNorm1d(hidden_dim)
@@ -118,14 +119,14 @@ class DecoderLSTMPred(nn.Module):
 				else:
 					return self.time_dist_act(self.fc(reconstruction))				
 			else:
-				return self.pred_fc_h2(self.bn_h2(self.relu(self.pred_fc_h(self.bn_h1(initial[0][0])))))
+				return self.sigmoid(self.pred_fc_h2(self.bn_h2(self.relu(self.pred_fc_h(self.bn_h1(initial[0][0]))))))
 				# return self.pred_fc_c(initial[1][0])
 
 	def get_autoencoder_param(self):
 		return list(self.lstm.parameters()) + list(self.fc.parameters())
 
 	def get_predictor_param(self):
-		return list(self.lstm.parameters()) + list(self.bn_h1.parameters()) + list(self.pred_fc_h.parameters())+ list(self.relu.parameters()) + list(self.bn_h2.parameters())  + list(self.pred_fc_h2.parameters())
+		return list(self.lstm.parameters()) + list(self.bn_h1.parameters()) + list(self.pred_fc_h.parameters()) + list(self.relu.parameters()) + list(self.bn_h2.parameters()) + list(self.pred_fc_h2.parameters())
 
 	def set_decoder_mode(self, toggle):
 		self.is_decoder = toggle

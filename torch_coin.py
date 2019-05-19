@@ -40,6 +40,12 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
 	acc_history = np.empty(num_steps)
 	loss_cel = nn.CrossEntropyLoss()
 
+	epsilon = None
+	if torch.cuda.is_available():
+		epsilon = torch.tensor(1e-7).cuda()
+	else:
+		epsilon = torch.tensor(1e-7)
+
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
 		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
@@ -76,7 +82,7 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None):
 		model.set_decoder_mode(False)
 		predicted_category = model(input=input_tensor, teacher_input=None)
 
-		loss = loss_cel(input=predicted_category, target=output)
+		loss = loss_cel(input=predicted_category+epsilon, target=output)
 		loss_history_cel[i_batch] = loss.item()
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
@@ -208,7 +214,8 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.01, eps=1e-7)]
+	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.01)]
+	schedulers = [optim.lr_scheduler.StepLR(opti[0], gamma=0.5, step_size=20), optim.lr_scheduler.StepLR(opti[1], gamma=0.75, step_size=10)]
 	loss_fn = custom_mse_loss
 
 	num_epochs = args.epochs
@@ -240,6 +247,9 @@ def main(args):
 			print(get_dict_string(train_history, "train: "))
 			print(get_dict_string(validation_history, "val: "))
 			print("---")
+
+			schedulers[0].step()
+			schedulers[1].step()
 
 			if args.save:
 				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
