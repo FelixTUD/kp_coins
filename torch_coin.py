@@ -216,7 +216,7 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.01)]
+	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.005)]
 	schedulers = [optim.lr_scheduler.StepLR(opti[0], gamma=0.5, step_size=20), optim.lr_scheduler.StepLR(opti[1], gamma=0.75, step_size=10)]
 	loss_fn = custom_mse_loss
 
@@ -294,11 +294,11 @@ def main(args):
 				print(get_dict_string(validation_history, "val: "))
 				print("---")
 
-			schedulers[0].step()
-			schedulers[1].step()
+				schedulers[0].step()
+				schedulers[1].step()
 
-			if args.save:
-				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+				if args.save:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
