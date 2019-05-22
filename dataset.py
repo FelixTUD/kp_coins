@@ -34,6 +34,7 @@ class NewCoinDataset(Dataset):
 		self.path_to_hdf5 = args.path
 		self.use_cuda = torch.cuda.is_available()
 		self.preloaded_data = []
+		self.coin_mapping = defaultdict(list)
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
@@ -58,6 +59,12 @@ class NewCoinDataset(Dataset):
 
 		print("Shuffeling preloaded data ...")
 		random.shuffle(self.preloaded_data)
+
+		self.generate_coin_mapping_index()
+
+	def generate_coin_mapping_index(self):
+		for index, loaded_data in enumerate(self.preloaded_data):
+			self.coin_mapping[loaded_data[0]].append(index)
 
 	def get_num_loaded_coins(self):
 		return len(self.coins)
@@ -101,7 +108,7 @@ class NewCoinDataset(Dataset):
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
 
-				self.preloaded_data.append(self.generate_data(timeseries, coin))
+				self.preloaded_data.append((coin, self.generate_data(timeseries, coin)))
 
 			print("")
 
@@ -136,7 +143,23 @@ class NewCoinDataset(Dataset):
 		return len(self.preloaded_data)
 		
 	def __getitem__(self, idx):
-		return self.preloaded_data[idx]
+		return self.preloaded_data[idx][1]
+
+	def get_data_for_coin_type(self, coin, num_examples):
+		result = []
+		if type(coin) != str:
+			coin = str(coin)
+
+		samples = self.coin_mapping[coin]
+
+		assert(len(samples) >= num_examples)
+		samples = random.sample(samples, num_examples)
+		
+		for sample in samples:
+			result.append(self[sample])
+
+		return result
+
 
 class CoinDataset(Dataset):
 	def __init__(self, path_to_hdf5, examples, max_length, shrink, args):

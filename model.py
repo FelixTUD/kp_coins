@@ -29,6 +29,11 @@ class EncoderLSTM(nn.Module):
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 
+		## Initialize weights
+
+		nn.init.xavier_uniform_(self.lstm.weight_ih_l0)
+		nn.init.xavier_uniform_(self.lstm.weight_hh_l0)
+
 	def forward(self, input):
 		return self.lstm(input)
 
@@ -91,6 +96,12 @@ class DecoderLSTMPred(nn.Module):
 		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, num_coins)
 
 		self.eval_mode = False
+
+		## Initialize weights
+
+		nn.init.xavier_uniform_(self.lstm.weight_ih_l0)
+		nn.init.xavier_uniform_(self.lstm.weight_hh_l0)
+
 
 	def forward(self, input, initial):
 		if self.eval_mode and self.is_decoder:

@@ -216,8 +216,8 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param()), optim.Adam(model.get_predictor_param(), lr=0.005)]
-	schedulers = [optim.lr_scheduler.StepLR(opti[0], gamma=0.5, step_size=20), optim.lr_scheduler.StepLR(opti[1], gamma=0.75, step_size=10)]
+	opti = [optim.Adam(model.get_autoencoder_param(), lr=0.01), optim.Adam(model.get_predictor_param(), lr=0.01)]
+	schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=np.arange(args.epochs)[::20]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.append([5, 10, 15, 20], np.arange(20, args.epochs)[::30]))]
 	loss_fn = custom_mse_loss
 
 	num_epochs = args.epochs
@@ -294,8 +294,8 @@ def main(args):
 				print(get_dict_string(validation_history, "val: "))
 				print("---")
 
-				schedulers[0].step()
-				schedulers[1].step()
+				schedulers[0].step(train_history["loss_mean"])
+				schedulers[1].step(validation_history["accuracy"])
 
 				if args.save:
 					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
@@ -308,9 +308,9 @@ def main(args):
 		model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
 		# Use training examples for now to test
-		num_examples_per_class = 25
-		coins = [5, 100]
-		colors = ['b', 'r']
+		num_examples_per_class = 130
+		coins = [1, 2, 5, 20, 50, 100, 200]
+		colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
 
 		plot_colors = []
 		[plot_colors.extend(x*num_examples_per_class) for x in colors]
@@ -318,10 +318,10 @@ def main(args):
 		i = 0
 		all_encodings = torch.empty(num_examples_per_class*len(coins), args.hidden_size)
 		for coin in coins:
-			coin_data = training_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+			coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
 
 			for data in coin_data:
-				print("\rCoin {}: {}/{}".format(coin, (i+1) % (num_examples_per_class + 1), num_examples_per_class), end="")
+				print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
 				input_tensor = data["input"]
 				encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
 
