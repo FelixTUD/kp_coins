@@ -192,3 +192,7 @@ class Autoencoder(nn.Module):
 
 	def set_eval_mode(self, toggle):
 		self.decoder.set_eval_mode(toggle)
+
+	def set_encoder_training(self, toggle):
+		for param in self.encoder.parameters():
+			param.requires_grad = toggle

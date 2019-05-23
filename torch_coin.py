@@ -233,7 +233,7 @@ def main(args):
 	if args.mode == "train":
 		if args.split:
 			for current_epoch in range(num_epochs):
-
+				model.set_encoder_training(True)
 				start_time = time.time()
 				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_categorizer=False)
 				end_time = time.time()
@@ -254,7 +254,7 @@ def main(args):
 				if args.save:
 					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 			for current_epoch in range(num_epochs):
-
+				model.set_encoder_training(False)
 				start_time = time.time()
 				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_autoencoder=False)
 				end_time = time.time()
