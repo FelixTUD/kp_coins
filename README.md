@@ -31,20 +31,25 @@ librosa==0.6.3
 # Usage
 ```
 torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
-                     [-lstm USE_LSTM] [-p PATH] [-s SHRINK] [-hs HIDDEN_SIZE]
-                     [-e EPOCHS] [--save SAVE] [-w WEIGHTS] [--top_db TOP_DB]
+                     [-lstm USE_LSTM] [--val_split VAL_SPLIT] -p PATH
+                     [-s SHRINK] [-hs HIDDEN_SIZE] [-e EPOCHS] [--save SAVE]
+                     [-w WEIGHTS] [--top_db TOP_DB]
                      [--coins COINS [COINS ...]] [--num_examples NUM_EXAMPLES]
+                     [--save_figures] [--split SPLIT] [--seed SEED]
+                     [--cudnn_deterministic]
 
 optional arguments:
   -h, --help            show this help message and exit
-  -m MODE, --mode MODE  Mode of the script. Can be either 'train', 'tsne' or
-                        infer'. Default 'train'
+  -m MODE, --mode MODE  Mode of the script. Can be either 'train', 'tsne',
+                        'confusion' or 'infer'. Default 'train'
   -c CPU_COUNT, --cpu_count CPU_COUNT
-                        Number of cpus to use. Default 0
+                        Number of worker threads to use. Default 0
   -b BATCH_SIZE, --batch_size BATCH_SIZE
                         Batch size. Default 1
   -lstm USE_LSTM, --use_lstm USE_LSTM
                         Use lstm or gru. Default True = use lstm
+  --val_split VAL_SPLIT
+                        Validation split. Default is 0.1
   -p PATH, --path PATH  Path to hdf5 data file.
   -s SHRINK, --shrink SHRINK
                         Shrinking factor. Selects data every s steps from
@@ -66,4 +71,11 @@ optional arguments:
                         Number of used coin data examples from each class for
                         training. Default uses the minimum number of all used
                         classes.
+  --save_figures        Save figures of reconstructed time series.
+  --seed SEED           Initializes Python, Numpy and Torch with this random
+                        seed. !!NOTE: Before running the script export
+                        PYTHONHASHSEED=0 as environment variable.!!
+  --cudnn_deterministic
+                        Sets CuDNN into deterministic mode. This might impact
+                        perfromance.
 ```

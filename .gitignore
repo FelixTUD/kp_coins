@@ -4,6 +4,7 @@
 plots/
 runs/
 trained/
+trained_net/
 
 # Created by https://www.gitignore.io/api/vim,emacs,macos,python,windows,sublimetext,visualstudio,visualstudiocode
 # Edit at https://www.gitignore.io/?templates=vim,emacs,macos,python,windows,sublimetext,visualstudio,visualstudiocode

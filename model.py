@@ -146,6 +146,69 @@ class DecoderLSTMPred(nn.Module):
 	def set_eval_mode(self, toggle):
 		self.eval_mode = toggle
 
+class VariationalAutoencoder(nn.Module):
+	def __init__(self, hidden_dim, feature_dim, num_coins, args):
+		super(VariationalAutoencoder, self).__init__()
+
+		self.use_lstm = args.use_lstm
+		self.hidden_dim = hidden_dim
+
+		self.mufc = nn.Linear(hidden_dim, hidden_dim//2)
+		self.logvarfc = nn.Linear(hidden_dim, hidden_dim//2)
+
+		if self.use_lstm:
+			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
+			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
+			self.decoder = DecoderLSTMPred(hidden_dim//2, feature_dim, num_coins, args)
+		else:
+			self.encoder = EncoderGRU(hidden_dim, feature_dim)
+			self.decoder = DecoderGRU(hidden_dim//2, feature_dim)
+
+	def reparameterize(self, mu, logvar):
+		std = torch.exp(0.5*logvar)
+		eps = torch.randn_like(std)
+		
+		return mu + eps*std
+
+	def forward(self, input, teacher_input=None, return_hidden=False):
+		_, last_hidden = self.encoder(input)
+
+		mu = self.mufc(last_hidden[0])
+		logvar = self.logvarfc(last_hidden[0])
+
+		z = self.reparameterize(mu=mu, logvar=logvar)
+
+		if return_hidden:
+			return z.detach().cpu()
+
+		hidden_c = torch.randn_like(z)
+		nn.init.xavier_uniform_(hidden_c)
+
+		hidden_in = (z, hidden_c)
+		
+		reconstructed = self.decoder(teacher_input, hidden_in)
+
+		return reconstructed, mu, logvar
+
+	def get_autoencoder_param(self):
+		return list(self.encoder.parameters()) + self.decoder.get_autoencoder_param()
+
+	def get_predictor_param(self):
+		return list(self.encoder.parameters()) + self.decoder.get_predictor_param()
+
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())
+
+	def set_decoder_mode(self, toggle):
+		self.decoder.set_decoder_mode(toggle)
+
+	def set_eval_mode(self, toggle):
+		self.decoder.set_eval_mode(toggle)
+
+	def set_encoder_training(self, toggle):
+		for param in self.encoder.parameters():
+			param.requires_grad = toggle
+
 
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
@@ -168,11 +231,11 @@ class Autoencoder(nn.Module):
 			if self.use_lstm:
 				result = torch.empty(2, self.hidden_dim)
 
-				result[0] = last_hidden[0].detach().cpu()
-				result[1] = last_hidden[1].detach().cpu()
+				result[0] = last_hidden[0].cpu()
+				result[1] = last_hidden[1].cpu()
 				return result
 			else:
-				return last_hidden.detach().cpu()
+				return last_hidden.cpu()
 		
 		reconstructed = self.decoder(teacher_input, last_hidden)
 

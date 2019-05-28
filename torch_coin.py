@@ -14,16 +14,21 @@ import sys
 import argparse
 import time
 import os
+import random
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
-from model import Autoencoder
+from model import Autoencoder, VariationalAutoencoder
 
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
 
 def calc_acc(input, target):
 	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
+
+def kl_loss(mu, logvar):
+	return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
 global_step_train = 0
 global_step_valid = 0
@@ -51,9 +56,14 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
 		model.set_decoder_mode(True)
+		#predicted_sequence, mu, logvar = model(input=input_tensor, teacher_input=teacher_input)
 		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
 
-		loss = loss_fn(predicted_sequence, reversed_input)
+		loss_reconstruction = loss_fn(predicted_sequence, reversed_input)
+		#loss_kl = kl_loss(mu=mu, logvar=logvar)
+
+		loss = loss_reconstruction #+ loss_kl
+
 		loss_history[i_batch] = loss.item()
 
 		if writer:
@@ -81,9 +91,14 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 		del loss # Necessary?
 	
 		model.set_decoder_mode(False)
+		#predicted_category, mu, logvar = model(input=input_tensor, teacher_input=None)
 		predicted_category = model(input=input_tensor, teacher_input=None)
 
-		loss = loss_cel(input=predicted_category+epsilon, target=output)
+		loss_categorization = loss_cel(input=predicted_category+epsilon, target=output)
+		# loss_kl = kl_loss(mu=mu, logvar=logvar)
+
+		loss = loss_categorization# + loss_kl
+
 		loss_history_cel[i_batch] = loss.item()
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
@@ -143,9 +158,14 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=Non
 
 		# loss_history[i_batch] = loss.item()
 
+		#predicted_category, mu, logvar = model(input=input_tensor, teacher_input=None)
 		predicted_category = model(input=input_tensor, teacher_input=None)
 
-		loss = loss_cel(input=predicted_category, target=output)
+		loss_categorization = loss_cel(input=predicted_category, target=output)
+		# loss_kl = kl_loss(mu=mu, logvar=logvar)
+
+		loss = loss_categorization# + loss_kl
+
 		loss_history_cel[i_batch] = loss.item()
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
@@ -184,6 +204,19 @@ def get_comment_string(args):
 	return comment
 
 def main(args):
+	if not args.seed:
+		args.seed = int(time.time()) 
+
+	print("Random seed: {}".format(args.seed))
+	torch.manual_seed(args.seed)
+	np.random.seed(args.seed)
+	random.seed(args.seed)
+
+	if args.cudnn_deterministic:
+		print("Running in CuDNN deterministic mode")
+		torch.backends.cudnn.deterministic = True
+		torch.backends.cudnn.benchmark = False
+
 	print("CPU count: {}".format(args.cpu_count))
 
 	torch.set_num_threads(max(1, args.cpu_count))
@@ -192,6 +225,8 @@ def main(args):
 	writer = SummaryWriter(comment=get_comment_string(args))
 	model_save_dir_name = writer.log_dir.split("/")[-1]
 	model_save_path = None
+
+	writer.add_scalar("constants/seed", scalar_value=args.seed)
 
 	if args.save:
 		model_save_path = os.path.join(args.save, model_save_dir_name)
@@ -294,8 +329,8 @@ def main(args):
 				print(get_dict_string(validation_history, "val: "))
 				print("---")
 
-				schedulers[0].step(train_history["loss_mean"])
-				schedulers[1].step(validation_history["accuracy"])
+				# schedulers[0].step(train_history["loss_mean"])
+				# schedulers[1].step(validation_history["accuracy"])
 
 				if args.save:
 					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
@@ -308,30 +343,69 @@ def main(args):
 		model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
 		# Use training examples for now to test
-		num_examples_per_class = 130
-		coins = [1, 2, 5, 20, 50, 100, 200]
-		colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+		num_examples_per_class = complete_dataset.get_num_coins_per_class()
+		coins = args.coins
+		colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k'][:len(args.coins)]
 
 		plot_colors = []
 		[plot_colors.extend(x*num_examples_per_class) for x in colors]
 
+		fig = plt.figure()
+		ax = fig.add_subplot(111)#, projection="3d")
+
 		i = 0
 		all_encodings = torch.empty(num_examples_per_class*len(coins), args.hidden_size)
-		for coin in coins:
-			coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+		with torch.no_grad():
+			for coin in coins:
+				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
 
-			for data in coin_data:
-				print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
-				input_tensor = data["input"]
-				encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+				for data in coin_data:
+					print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
+					input_tensor = data["input"]
+					encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
 
-				all_encodings[i] = encoded_input[0]
-				i += 1
-			print("")
-		embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
+					all_encodings[i] = encoded_input[0]
+					i += 1
+				print("")
+			embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
 
-		plt.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
+		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
 		plt.show()
+
+	if args.mode == "confusion":
+		from sklearn.metrics import confusion_matrix
+		assert (args.weights), "No weights file specified!"
+
+		device = torch.device('cpu')
+		model.load_state_dict(torch.load(args.weights, map_location=device))
+		model.eval()
+		model.set_decoder_mode(False)
+
+		num_examples_per_class = complete_dataset.get_num_coins_per_class()
+		coins = args.coins
+
+		expected = []
+		predicted = []
+
+		with torch.no_grad():
+			for coin in coins:
+				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+				for i, data in enumerate(coin_data):
+					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
+
+					input_tensor, label = data["input"], data["label"]
+					expected.append(coins[label])
+
+					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), teacher_input=None)
+					predicted_category = predicted_category.cpu().numpy()
+
+					predicted.append(coins[np.argmax(predicted_category)])
+				print("")
+
+		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
+		print(confusion_matrix)
+		print(np.divide(confusion_matrix, num_examples_per_class))
 
 	if args.mode == "infer":
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
@@ -371,7 +445,7 @@ if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne' or infer'. Default 'train'")
+	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne', 'confusion' or 'infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=128, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
@@ -387,6 +461,8 @@ if __name__ == "__main__":
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
 	parser.add_argument("--split", type=bool, default=False, help="Split training in num of epochs autoencoder and num of epochs categorizer training")
+	parser.add_argument("--seed", type=int, default=None, help="Initializes Python, Numpy and Torch with this random seed. !!NOTE: Before running the script export PYTHONHASHSEED=0 as environment variable.!!")
+	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
 
 	args = parser.parse_args()
 

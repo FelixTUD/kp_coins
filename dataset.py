@@ -66,6 +66,9 @@ class NewCoinDataset(Dataset):
 		for index, loaded_data in enumerate(self.preloaded_data):
 			self.coin_mapping[loaded_data[0]].append(index)
 
+	def get_num_coins_per_class(self):
+		return self.min_num_coins
+
 	def get_num_loaded_coins(self):
 		return len(self.coins)
 
