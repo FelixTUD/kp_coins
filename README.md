@@ -30,13 +30,15 @@ librosa==0.6.3
 
 # Usage
 ```
-torch_coin.py [-h] [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
-                     [-lstm USE_LSTM] [--val_split VAL_SPLIT] -p PATH
-                     [-s SHRINK] [-hs HIDDEN_SIZE] [-e EPOCHS] [--save SAVE]
-                     [-w WEIGHTS] [--top_db TOP_DB]
-                     [--coins COINS [COINS ...]] [--num_examples NUM_EXAMPLES]
-                     [--save_figures] [--split SPLIT] [--seed SEED]
-                     [--cudnn_deterministic]
+torch_coin.py [-h] -p PATH [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
+                     [-lstm USE_LSTM] [--val_split VAL_SPLIT] [-s SHRINK]
+                     [-hs HIDDEN_SIZE] [-e EPOCHS] [--save SAVE] [-w WEIGHTS]
+                     [--top_db TOP_DB] [--coins COINS [COINS ...]]
+                     [--num_examples NUM_EXAMPLES] [--save_figures]
+                     [--split SPLIT] [--seed SEED] [--cudnn_deterministic]
+
+required arguments:
+  -p PATH, --path PATH  Path to hdf5 data file.
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -50,7 +52,6 @@ optional arguments:
                         Use lstm or gru. Default True = use lstm
   --val_split VAL_SPLIT
                         Validation split. Default is 0.1
-  -p PATH, --path PATH  Path to hdf5 data file.
   -s SHRINK, --shrink SHRINK
                         Shrinking factor. Selects data every s steps from
                         input.
@@ -72,6 +73,8 @@ optional arguments:
                         training. Default uses the minimum number of all used
                         classes.
   --save_figures        Save figures of reconstructed time series.
+  --split SPLIT         Split training in num of epochs autoencoder and num of
+                        epochs categorizer training
   --seed SEED           Initializes Python, Numpy and Torch with this random
                         seed. !!NOTE: Before running the script export
                         PYTHONHASHSEED=0 as environment variable.!!

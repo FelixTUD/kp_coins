@@ -445,12 +445,16 @@ if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
 	parser = argparse.ArgumentParser()
+
+	required_arguments = parser.add_argument_group('required arguments')
+
+	required_arguments.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
+
 	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne', 'confusion' or 'infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=128, help="Batch size. Default 1")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
 	parser.add_argument("--val_split", type=float, default=0.1, help="Validation split. Default is 0.1")
-	parser.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
 	parser.add_argument("-s", "--shrink", type=int, default=16, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, default=64, help="Size of LSTM/GRU hidden layer.")
 	parser.add_argument("-e", "--epochs", type=int, default=100, help="Number of epochs")
