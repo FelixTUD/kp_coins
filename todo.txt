@@ -2,14 +2,13 @@
 	- Fourier transformation --> Peaks anschauen
 	- nach preprocessing nochmal fourier transformierung und schauen ob peaks noch da sind
 
-- Input Normalisierung über alle Daten 
 - Nicht alle n Werte nehmen, sondern Abschnitte
-- In Categorizer Training den Encoder nicht mit trainieren (Validieren ob unerwartete Accuracy drops verschwinden)
 - Varational Autoencoder implementieren und testen
 - Fake Inputs testen
 
 == DONE ==
 
+- In Categorizer Training den Encoder nicht mit trainieren (Validieren ob unerwartete Accuracy drops verschwinden)
 - TSNE mit aktuellem Netz
 - Trainieren mit fc zu Coin-Klasse, abwechselnd 
 - Effektives predicten mit teacher input
