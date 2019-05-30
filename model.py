@@ -37,114 +37,45 @@ class EncoderLSTM(nn.Module):
 	def forward(self, input):
 		return self.lstm(input)
 
+class Predictor(nn.Module):
+	def __init__(self, input_dim, hidden_dim, output_dim):
+		super(Predictor, self).__init__()
+
+		self.fc1 = nn.Linear(input_dim, hidden_dim)
+		self.bn_1 = nn.BatchNorm1d(hidden_dim)
+		self.fc_out = nn.Linear(hidden_dim, output_dim)
+
+		self.relu = nn.ReLU()
+		self.sigmoid = nn.Sigmoid() # To force outputs between 0-1 for logsoftmax. Might help with unexpected dips??
+
+	def forward(self, input):
+		input = self.relu(self.fc1(input))
+		input = self.bn_1(input)
+		return self.sigmoid(self.fc_out(input))
+
 class DecoderLSTM(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, activation):
+	def __init__(self, hidden_dim, feature_dim):
 		super(DecoderLSTM, self).__init__()
-
-		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
-		self.fc = nn.Linear(hidden_dim, feature_dim)
-
-		self.activation = activation
-
-		self.eval_mode = False
-
-	def forward(self, input, initial):
-		if self.eval_mode:
-			seq_length = input.shape[1]
-
-			output = torch.empty(input.shape).to(input.device)
-
-			# Use detach() to not generate a huge flow graph and run out of memory
-			for i in range(seq_length):
-				partial_reconstruction, initial = self.lstm(input.data[:, i:i + 1, :], initial)
-				partial_reconstruction = partial_reconstruction.detach()
-				initial = (initial[0].detach(), initial[1].detach())
-
-				if self.activation:
-					output.data[:, i:i+1, :] = self.activation(self.fc(partial_reconstruction).detach()).detach().data
-				else:
-					output.data[:, i:i+1, :] = self.fc(partial_reconstruction).detach().data
-				input.data[:, i+1:i+2, :] = output.data[:, i:i+1, :]
-
-			return output
-		else:
-			reconstruction, _ = self.lstm(input, initial)
-			if self.activation:
-				return self.activation(self.fc(reconstruction))
-			else:
-				return self.fc(reconstruction)
-
-	def set_eval_mode(self, toggle):
-		self.eval_mode = toggle
-
-class DecoderLSTMPred(nn.Module):
-	def __init__(self, hidden_dim, feature_dim, num_coins, args):
-		super(DecoderLSTMPred, self).__init__()
-		self.is_decoder = True
-		self.args = args
 
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 		self.time_dist_act = nn.Tanh()
 		self.sigmoid = nn.Sigmoid()
 
-		fc_hidden_dim = hidden_dim * 2
-		self.bn_h1 = nn.BatchNorm1d(hidden_dim)
-		self.pred_fc_h = nn.Linear(hidden_dim, fc_hidden_dim)
-		self.relu = nn.ReLU()
-		self.bn_h2 = nn.BatchNorm1d(fc_hidden_dim)
-		self.pred_fc_h2 = nn.Linear(fc_hidden_dim, num_coins)
-
-		self.eval_mode = False
-
 		## Initialize weights
 
 		nn.init.xavier_uniform_(self.lstm.weight_ih_l0)
 		nn.init.xavier_uniform_(self.lstm.weight_hh_l0)
 
-
 	def forward(self, input, initial):
-		if self.eval_mode and self.is_decoder:
-			seq_length = input.shape[1]
+		reconstruction, _ = self.lstm(input, initial)
+		if type(reconstruction) is nn.utils.rnn.PackedSequence:
+			unpacked, _ = nn.utils.rnn.pad_packed_sequence(reconstruction, batch_first=True) # second return is tensor of original lengths
+			predicted =  self.time_dist_act(self.fc(unpacked))
 
-			output = torch.empty(input.shape).to(input.device)
-
-			# Use detach() to not generate a huge flow graph and run out of memory
-			for i in range(seq_length):
-				partial_reconstruction, initial = self.lstm(input.data[:, i:i + 1, :], initial)
-				partial_reconstruction = partial_reconstruction.detach()
-				initial = (initial[0].detach(), initial[1].detach())
-
-				output.data[:, i:i+1, :] = self.time_dist_act(self.fc(partial_reconstruction).detach()).detach().data
-				input.data[:, i+1:i+2, :] = output.data[:, i:i+1, :]
-
-			return output
+			return predicted
 		else:
-			if self.is_decoder:
-				reconstruction, _ = self.lstm(input, initial)
-				if type(reconstruction) is nn.utils.rnn.PackedSequence:
-					unpacked, _ = nn.utils.rnn.pad_packed_sequence(reconstruction, batch_first=True) # [1] is tensor of original lengths
-					predicted =  self.time_dist_act(self.fc(unpacked))
-
-					return predicted
-				else:
-					return self.time_dist_act(self.fc(reconstruction))				
-			else:
-				return self.sigmoid(self.pred_fc_h2(self.bn_h2(self.relu(self.pred_fc_h(self.bn_h1(initial[0][0]))))))
-				# return self.pred_fc_c(initial[1][0])
-
-	def get_autoencoder_param(self):
-		return list(self.lstm.parameters()) + list(self.fc.parameters())
-
-	def get_predictor_param(self):
-		return list(self.lstm.parameters()) + list(self.bn_h1.parameters()) + list(self.pred_fc_h.parameters()) + list(self.relu.parameters()) + list(self.bn_h2.parameters()) + list(self.pred_fc_h2.parameters())
-
-	def set_decoder_mode(self, toggle):
-		self.is_decoder = toggle
-
-
-	def set_eval_mode(self, toggle):
-		self.eval_mode = toggle
+			return self.time_dist_act(self.fc(reconstruction))
 
 class VariationalAutoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
@@ -158,11 +89,12 @@ class VariationalAutoencoder(nn.Module):
 
 		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
-			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
-			self.decoder = DecoderLSTMPred(hidden_dim//2, feature_dim, num_coins, args)
+			self.decoder = DecoderLSTM(hidden_dim//2, feature_dim)
 		else:
 			self.encoder = EncoderGRU(hidden_dim, feature_dim)
 			self.decoder = DecoderGRU(hidden_dim//2, feature_dim)
+
+		self.predictor = Predictor(input_dim=hidden_dim//2, hidden_dim=args.fc_hidden_dim, output_dim=num_coins)
 
 	def reparameterize(self, mu, logvar):
 		std = torch.exp(0.5*logvar)
@@ -170,45 +102,40 @@ class VariationalAutoencoder(nn.Module):
 		
 		return mu + eps*std
 
-	def forward(self, input, teacher_input=None, return_hidden=False):
+	def forward(self, input, teacher_input=None, use_predictor=False, return_hidden=False):
 		_, last_hidden = self.encoder(input)
 
-		mu = self.mufc(last_hidden[0])
-		logvar = self.logvarfc(last_hidden[0])
+		mu = self.mufc(last_hidden[0][0])
+		logvar = self.logvarfc(last_hidden[0][0])
 
 		z = self.reparameterize(mu=mu, logvar=logvar)
 
 		if return_hidden:
 			return z.detach().cpu()
 
-		hidden_c = torch.randn_like(z)
-		nn.init.xavier_uniform_(hidden_c)
+		if use_predictor:
+			return self.predictor(z)
+		else:
+			batch_size, hidden_size = z.shape
+			z = z.view(1, batch_size, hidden_size)
 
-		hidden_in = (z, hidden_c)
-		
-		reconstructed = self.decoder(teacher_input, hidden_in)
+			hidden_c = torch.randn_like(z)
+			nn.init.xavier_uniform_(hidden_c)
 
-		return reconstructed, mu, logvar
+			hidden_in = (z, hidden_c)
+			
+			reconstructed = self.decoder(teacher_input, hidden_in)
+
+			return reconstructed, mu, logvar
 
 	def get_autoencoder_param(self):
-		return list(self.encoder.parameters()) + self.decoder.get_autoencoder_param()
+		return list(self.encoder.parameters()) + list(self.decoder.parameters())
 
 	def get_predictor_param(self):
-		return list(self.encoder.parameters()) + self.decoder.get_predictor_param()
+		return list(self.encoder.parameters()) + list(self.predictor.parameters())
 
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
-
-	def set_decoder_mode(self, toggle):
-		self.decoder.set_decoder_mode(toggle)
-
-	def set_eval_mode(self, toggle):
-		self.decoder.set_eval_mode(toggle)
-
-	def set_encoder_training(self, toggle):
-		for param in self.encoder.parameters():
-			param.requires_grad = toggle
-
 
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
@@ -219,13 +146,14 @@ class Autoencoder(nn.Module):
 
 		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
-			#self.decoder = DecoderLSTM(hidden_dim, feature_dim, activation_function)
-			self.decoder = DecoderLSTMPred(hidden_dim, feature_dim, num_coins, args)
+			self.decoder = DecoderLSTM(hidden_dim, feature_dim)
 		else:
 			self.encoder = EncoderGRU(hidden_dim, feature_dim)
 			self.decoder = DecoderGRU(hidden_dim, feature_dim)
 
-	def forward(self, input, teacher_input=None, return_hidden=False):
+		self.predictor = Predictor(input_dim=hidden_dim, hidden_dim=args.fc_hidden_dim, output_dim=num_coins)
+
+	def forward(self, input, teacher_input=None, use_predictor=False, return_hidden=False):
 		_, last_hidden = self.encoder(input)
 		if return_hidden:
 			if self.use_lstm:
@@ -236,22 +164,17 @@ class Autoencoder(nn.Module):
 				return result
 			else:
 				return last_hidden.cpu()
-		
-		reconstructed = self.decoder(teacher_input, last_hidden)
 
-		return reconstructed
+		if use_predictor:
+			return self.predictor(last_hidden[0][0])
+		else:
+			return self.decoder(teacher_input, last_hidden)
 
 	def get_autoencoder_param(self):
-		return list(self.encoder.parameters()) + self.decoder.get_autoencoder_param()
+		return list(self.encoder.parameters()) + list(self.decoder.parameters())
 
 	def get_predictor_param(self):
-		return list(self.encoder.parameters()) + self.decoder.get_predictor_param()
+		return list(self.encoder.parameters()) + list(self.predictor.parameters())
 
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
-
-	def set_decoder_mode(self, toggle):
-		self.decoder.set_decoder_mode(toggle)
-
-	def set_eval_mode(self, toggle):
-		self.decoder.set_eval_mode(toggle)

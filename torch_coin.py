@@ -30,6 +30,16 @@ def calc_acc(input, target):
 def kl_loss(mu, logvar):
 	return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
+def calculate_loss_non_generative(model_output, target):
+	return custom_mse_loss(model_output, target)
+
+def calculate_loss_generative(model_output, target):
+	predicted_sequence, mu, logvar = model_output
+	kl_divergence = kl_loss(mu, logvar)
+	mse_loss = custom_mse_loss(predicted_sequence, target)
+	return kl_divergence + mse_loss
+
+
 global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
@@ -45,6 +55,12 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 	acc_history = np.empty(num_steps)
 	loss_cel = nn.CrossEntropyLoss()
 
+	prediction_loss = None
+	if type(model) is Autoencoder:
+		prediction_loss = calculate_loss_non_generative
+	elif type(model) is VariationalAutoencoder:
+		prediction_loss = calculate_loss_generative
+
 	epsilon = None
 	if torch.cuda.is_available():
 		epsilon = torch.tensor(1e-7).cuda()
@@ -53,16 +69,11 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 
 	for i_batch, sample_batched in enumerate(dataloader):
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+
 		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-		model.set_decoder_mode(True)
-		#predicted_sequence, mu, logvar = model(input=input_tensor, teacher_input=teacher_input)
-		predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-		loss_reconstruction = loss_fn(predicted_sequence, reversed_input)
-		#loss_kl = kl_loss(mu=mu, logvar=logvar)
-
-		loss = loss_reconstruction #+ loss_kl
+		model_output = model(input=input_tensor, teacher_input=teacher_input)
+		loss = prediction_loss(model_output, reversed_input)
 
 		loss_history[i_batch] = loss.item()
 
@@ -90,15 +101,9 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 
 		del loss # Necessary?
 	
-		model.set_decoder_mode(False)
-		#predicted_category, mu, logvar = model(input=input_tensor, teacher_input=None)
-		predicted_category = model(input=input_tensor, teacher_input=None)
-
-		loss_categorization = loss_cel(input=predicted_category+epsilon, target=output)
-		# loss_kl = kl_loss(mu=mu, logvar=logvar)
-
-		loss = loss_categorization# + loss_kl
-
+		predicted_category = model(input=input_tensor, teacher_input=None, use_predictor=True)
+		loss = loss_cel(input=predicted_category+epsilon, target=output)
+	
 		loss_history_cel[i_batch] = loss.item()
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
@@ -121,14 +126,12 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step_train // num_steps, scalar_value=loss_history.mean())
 		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step_train // num_steps, scalar_value=acc_history.mean())
 			
-	return {"loss_mean": loss_history.mean(), "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
+	return {"loss_reconstruction": loss_history.mean(), "loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
 
 def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
 	global global_step_valid
-	model = model.eval()
-	model.set_eval_mode(True)
-	model.set_decoder_mode(False)
-
+	model.eval()
+	
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
@@ -136,55 +139,36 @@ def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=Non
 	acc_history = np.empty(num_steps)
 	loss_cel = nn.CrossEntropyLoss()
 
-	for i_batch, sample_batched in enumerate(dataloader):
-		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
-		input_tensor, reversed_input, _, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
+	prediction_loss = None
+	if type(model) is Autoencoder:
+		prediction_loss = calculate_loss_non_generative
+	elif type(model) is VariationalAutoencoder:
+		prediction_loss = calculate_loss_generative
 
-		# iterative_teacher_input = torch.empty(input_tensor.shape).to(input_tensor.device)
-		# iterative_teacher_input[:, 0,:] = -1
+	with torch.no_grad():
+		for i_batch, sample_batched in enumerate(dataloader):
+			print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+			input_tensor, reversed_input, _, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
 
-		# predicted_sequence = model(input=input_tensor, teacher_input=iterative_teacher_input)
+			predicted_category = model(input=input_tensor, teacher_input=None, use_predictor=True)
+			loss = loss_cel(input=predicted_category, target=output)
 
-		# for i in range(input_tensor.shape[0]):
-		# 	np_input = input_tensor[i].cpu().numpy().reshape(input_tensor.shape[1])
-		# 	np_predicted = np.flip(predicted_sequence[i].detach().cpu().numpy().reshape(predicted_sequence.shape[1]))
+			loss_history_cel[i_batch] = loss.item()
+			acc = calc_acc(input=predicted_category, target=output)
+			acc_history[i_batch] = acc
 
-		# 	plt.plot(np_input, label="input")
-		# 	plt.plot(np_predicted, label="predicted")
-		# 	plt.savefig(os.path.join(plot_dir, str(i_batch * num_steps + i) + ".png"), format="png")
-		# 	plt.clf()
+			if writer:
+				writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
 
-		# loss = loss_fn(predicted_sequence, reversed_input)
+			del loss # Necessary?
 
-		# loss_history[i_batch] = loss.item()
-
-		#predicted_category, mu, logvar = model(input=input_tensor, teacher_input=None)
-		predicted_category = model(input=input_tensor, teacher_input=None)
-
-		loss_categorization = loss_cel(input=predicted_category, target=output)
-		# loss_kl = kl_loss(mu=mu, logvar=logvar)
-
-		loss = loss_categorization# + loss_kl
-
-		loss_history_cel[i_batch] = loss.item()
-		acc = calc_acc(input=predicted_category, target=output)
-		acc_history[i_batch] = acc
+			global_step_valid += 1
 
 		if writer:
-			# writer.add_scalar("val_raw/loss/categorization", global_step=global_step, scalar_value=loss.item())
-			writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
+			writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step_valid // num_steps, scalar_value=loss_history_cel.mean())
+			writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step_valid // num_steps, scalar_value=acc_history.mean())
 
-		del loss # Necessary?
-
-		global_step_valid += 1
-
-	if writer:
-		writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step_valid // num_steps, scalar_value=loss_history_cel.mean())
-		# writer.add_scalar("val_per_epoch/loss/reconstruction", global_step=global_step_valid // num_steps, scalar_value=loss_history.mean())
-		writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step_valid // num_steps, scalar_value=acc_history.mean())
-
-	model.set_eval_mode(False)
-	return {"loss_mean": 0, "loss_cel_mean": loss_history_cel.mean(), "accuracy": acc_history.mean()}
+	return {"loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
 
 def get_dict_string(d, prefix=""):
 	result = prefix
@@ -194,9 +178,11 @@ def get_dict_string(d, prefix=""):
 	return result[:-1]
 
 def get_comment_string(args):
-	comment = "b{}_".format(args.batch_size)
+	comment = "gen_" if args.use_variational_autoencoder else "non_gen_"
+	comment += "b{}_".format(args.batch_size)
 	comment += "db{}_".format(args.top_db)
 	comment += "hs{}_".format(args.hidden_size)
+	comment += "fc_hd{}_".format(args.fc_hidden_dim)
 	comment += "lstm_" if args.use_lstm else "gru_"
 	comment += "s{}_".format(args.shrink)
 	comment += "e{}_".format(args.epochs)
@@ -246,7 +232,14 @@ def main(args):
 	validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
-	model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+	model = None
+	if args.use_variational_autoencoder:
+		model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+	else:
+		model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+	print("Using: {}".format(type(model).__name__))
+
 	if cuda_available:
 		print("Moving model to gpu...")
 		model = model.cuda()
@@ -266,74 +259,30 @@ def main(args):
 	no_improvements_min_epochs = 10
 
 	if args.mode == "train":
-		if args.split:
-			for current_epoch in range(num_epochs):
+		for current_epoch in range(num_epochs):
 
-				start_time = time.time()
-				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_categorizer=False)
-				end_time = time.time()
+			start_time = time.time()
+			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
+			end_time = time.time()
 
-				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-				
-				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-				end_time = time.time()
+			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+			
+			start_time = time.time()
+			validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+			end_time = time.time()
 
-				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
-				print("Autoencoder train Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-				print(get_dict_string(train_history, "train: "))
-				print(get_dict_string(validation_history, "val: "))
-				print("---")
+			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+			print(get_dict_string(train_history, "train: "))
+			print(get_dict_string(validation_history, "val: "))
+			print("---")
 
-				if args.save:
-					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
-			for current_epoch in range(num_epochs):
+			# schedulers[0].step(train_history["loss_mean"])
+			# schedulers[1].step(validation_history["accuracy"])
 
-				start_time = time.time()
-				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer, train_autoencoder=False)
-				end_time = time.time()
-
-				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-				
-				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-				end_time = time.time()
-
-				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
-
-				print("Categorizer Train Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-				print(get_dict_string(train_history, "train: "))
-				print(get_dict_string(validation_history, "val: "))
-				print("---")
-
-				if args.save:
-					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
-		else:
-			for current_epoch in range(num_epochs):
-
-				start_time = time.time()
-				train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
-				end_time = time.time()
-
-				print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-				
-				start_time = time.time()
-				validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
-				end_time = time.time()
-
-				print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
-
-				print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-				print(get_dict_string(train_history, "train: "))
-				print(get_dict_string(validation_history, "val: "))
-				print("---")
-
-				# schedulers[0].step(train_history["loss_mean"])
-				# schedulers[1].step(validation_history["accuracy"])
-
-				if args.save:
-					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+			if args.save:
+				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
@@ -379,7 +328,6 @@ def main(args):
 		device = torch.device('cpu')
 		model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
-		model.set_decoder_mode(False)
 
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
 		coins = args.coins
@@ -397,7 +345,7 @@ def main(args):
 					input_tensor, label = data["input"], data["label"]
 					expected.append(coins[label])
 
-					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), teacher_input=None)
+					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
 					predicted_category = predicted_category.cpu().numpy()
 
 					predicted.append(coins[np.argmax(predicted_category)])
@@ -408,6 +356,8 @@ def main(args):
 		print(np.divide(confusion_matrix, num_examples_per_class))
 
 	if args.mode == "infer":
+		raise Exception("This mode needs to be reimplemented") # Remove if reimplemented
+		
 		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
 
 		gt_val = []
@@ -450,6 +400,7 @@ if __name__ == "__main__":
 
 	required_arguments.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
 
+	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
 	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne', 'confusion' or 'infer'. Default 'train'")
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=128, help="Batch size. Default 1")
@@ -457,6 +408,7 @@ if __name__ == "__main__":
 	parser.add_argument("--val_split", type=float, default=0.1, help="Validation split. Default is 0.1")
 	parser.add_argument("-s", "--shrink", type=int, default=16, help="Shrinking factor. Selects data every s steps from input.")
 	parser.add_argument("-hs", "--hidden_size", type=int, default=64, help="Size of LSTM/GRU hidden layer.")
+	parser.add_argument("-fc_hd", "--fc_hidden_dim", type=int, default=100, help="Hidden dimension size of predictor fully connected layer. Default 100")
 	parser.add_argument("-e", "--epochs", type=int, default=100, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
@@ -464,7 +416,6 @@ if __name__ == "__main__":
 	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
-	parser.add_argument("--split", type=bool, default=False, help="Split training in num of epochs autoencoder and num of epochs categorizer training")
 	parser.add_argument("--seed", type=int, default=None, help="Initializes Python, Numpy and Torch with this random seed. !!NOTE: Before running the script export PYTHONHASHSEED=0 as environment variable.!!")
 	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
 
