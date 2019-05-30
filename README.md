@@ -30,18 +30,21 @@ librosa==0.6.3
 
 # Usage
 ```
-torch_coin.py [-h] -p PATH [-m MODE] [-c CPU_COUNT] [-b BATCH_SIZE]
-                     [-lstm USE_LSTM] [--val_split VAL_SPLIT] [-s SHRINK]
-                     [-hs HIDDEN_SIZE] [-e EPOCHS] [--save SAVE] [-w WEIGHTS]
-                     [--top_db TOP_DB] [--coins COINS [COINS ...]]
-                     [--num_examples NUM_EXAMPLES] [--save_figures]
-                     [--split SPLIT] [--seed SEED] [--cudnn_deterministic]
+torch_coin.py [-h] -p PATH [--use_variational_autoencoder] [-m MODE]
+                     [-c CPU_COUNT] [-b BATCH_SIZE] [-lstm USE_LSTM]
+                     [--val_split VAL_SPLIT] [-s SHRINK] [-hs HIDDEN_SIZE]
+                     [-fc_hd FC_HIDDEN_DIM] [-e EPOCHS] [--save SAVE]
+                     [-w WEIGHTS] [--top_db TOP_DB]
+                     [--coins COINS [COINS ...]] [--num_examples NUM_EXAMPLES]
+                     [--save_figures] [--seed SEED] [--cudnn_deterministic]
 
 required arguments:
   -p PATH, --path PATH  Path to hdf5 data file.
 
 optional arguments:
   -h, --help            show this help message and exit
+  --use_variational_autoencoder
+                        Uses a variational autoencoder model
   -m MODE, --mode MODE  Mode of the script. Can be either 'train', 'tsne',
                         'confusion' or 'infer'. Default 'train'
   -c CPU_COUNT, --cpu_count CPU_COUNT
@@ -57,6 +60,9 @@ optional arguments:
                         input.
   -hs HIDDEN_SIZE, --hidden_size HIDDEN_SIZE
                         Size of LSTM/GRU hidden layer.
+  -fc_hd FC_HIDDEN_DIM, --fc_hidden_dim FC_HIDDEN_DIM
+                        Hidden dimension size of predictor fully connected
+                        layer. Default 100
   -e EPOCHS, --epochs EPOCHS
                         Number of epochs
   --save SAVE           Specify save folder for weight files. Default: None
@@ -73,8 +79,6 @@ optional arguments:
                         training. Default uses the minimum number of all used
                         classes.
   --save_figures        Save figures of reconstructed time series.
-  --split SPLIT         Split training in num of epochs autoencoder and num of
-                        epochs categorizer training
   --seed SEED           Initializes Python, Numpy and Torch with this random
                         seed. !!NOTE: Before running the script export
                         PYTHONHASHSEED=0 as environment variable.!!
