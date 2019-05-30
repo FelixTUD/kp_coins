@@ -5,6 +5,7 @@
 - Nicht alle n Werte nehmen, sondern Abschnitte
 - Varational Autoencoder implementieren und testen
 - Fake Inputs testen
+- Dokumentieren aller bisherigen Probleme 
 
 == DONE ==
 
