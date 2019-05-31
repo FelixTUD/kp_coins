@@ -119,10 +119,10 @@ class VariationalAutoencoder(nn.Module):
 			batch_size, hidden_size = z.shape
 			z = z.view(1, batch_size, hidden_size)
 
-			hidden_c = torch.randn_like(z)
-			nn.init.xavier_uniform_(hidden_c)
+			# hidden_c = torch.randn_like(z)
+			# nn.init.xavier_uniform_(hidden_c)
 
-			hidden_in = (z, hidden_c)
+			hidden_in = (z, z)
 			
 			reconstructed = self.decoder(teacher_input, hidden_in)
 
@@ -132,10 +132,24 @@ class VariationalAutoencoder(nn.Module):
 		return list(self.encoder.parameters()) + list(self.decoder.parameters())
 
 	def get_predictor_param(self):
-		return list(self.encoder.parameters()) + list(self.predictor.parameters())
+		# return list(self.encoder.parameters()) + list(self.predictor.parameters())
+		return list(self.predictor.parameters())
 
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
+
+	def freeze_autoencoder(self):
+		for param in self.encoder.parameters():
+			param.requires_grad = False
+		for param in self.decoder.parameters():
+			param.requires_grad = False
+
+	def unfreeze_autoencoder(self):
+		for param in self.encoder.parameters():
+			param.requires_grad = True
+		for param in self.decoder.parameters():
+			param.requires_grad = True
+
 
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
@@ -174,7 +188,20 @@ class Autoencoder(nn.Module):
 		return list(self.encoder.parameters()) + list(self.decoder.parameters())
 
 	def get_predictor_param(self):
-		return list(self.encoder.parameters()) + list(self.predictor.parameters())
+		# return list(self.encoder.parameters()) + list(self.predictor.parameters())
+		return list(self.predictor.parameters())
 
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
+
+	def freeze_autoencoder(self):
+		for param in self.encoder.parameters():
+			param.requires_grad = False
+		for param in self.decoder.parameters():
+			param.requires_grad = False
+
+	def unfreeze_autoencoder(self):
+		for param in self.encoder.parameters():
+			param.requires_grad = True
+		for param in self.decoder.parameters():
+			param.requires_grad = True

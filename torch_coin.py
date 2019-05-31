@@ -39,7 +39,6 @@ def calculate_loss_generative(model_output, target):
 	mse_loss = custom_mse_loss(predicted_sequence, target)
 	return kl_divergence + mse_loss
 
-
 global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
@@ -100,6 +99,8 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 			optimizer[0].step()
 
 		del loss # Necessary?
+
+		model.freeze_autoencoder()
 	
 		predicted_category = model(input=input_tensor, teacher_input=None, use_predictor=True)
 		loss = loss_cel(input=predicted_category+epsilon, target=output)
@@ -118,6 +119,8 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 			optimizer[1].step()
 
 		del loss # Necessary?
+
+		model.unfreeze_autoencoder()
 
 		global_step_train += 1
 
@@ -203,9 +206,9 @@ def main(args):
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
 
-	print("CPU count: {}".format(args.cpu_count))
+	print("Worker thread count: {}".format(max(0, args.cpu_count)))
 
-	torch.set_num_threads(max(1, args.cpu_count))
+	torch.set_num_threads(max(0, args.cpu_count))
 	cuda_available = torch.cuda.is_available()
 
 	writer = SummaryWriter(comment=get_comment_string(args))
@@ -244,7 +247,7 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param(), lr=0.01), optim.Adam(model.get_predictor_param(), lr=0.01)]
+	opti = [optim.Adam(model.get_autoencoder_param(), lr=0.005), optim.Adam(model.get_predictor_param(), lr=0.01)]
 	schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=np.arange(args.epochs)[::20]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.append([5, 10, 15, 20], np.arange(20, args.epochs)[::30]))]
 	loss_fn = custom_mse_loss
 
