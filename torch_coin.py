@@ -334,7 +334,6 @@ def main(args):
 		colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 
 		plot_colors = []
-		[plot_colors.extend(x*num_examples_per_class) for x in colors]
 
 		fig = plt.figure()
 		ax = fig.add_subplot(111)#, projection="3d")
@@ -342,7 +341,7 @@ def main(args):
 		i = 0
 		all_encodings = torch.empty(num_examples_per_class*len(coins), args.hidden_size)
 		with torch.no_grad():
-			for coin in coins:
+			for coin_num, coin in enumerate(coins):
 				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
 
 				for data in coin_data:
@@ -351,6 +350,7 @@ def main(args):
 					encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
 
 					all_encodings[i] = encoded_input[0]
+					plot_colors.append(colors[coin_num])
 					i += 1
 				print("")
 		
