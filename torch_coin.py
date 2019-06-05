@@ -270,32 +270,32 @@ def main(args):
 	validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 
-	model = None
-	if args.use_variational_autoencoder:
-		model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-	else:
-		model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-	print("Using: {}".format(type(model).__name__))
-
-	if cuda_available:
-		print("Moving model to gpu...")
-		model = model.cuda()
-
-	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*3), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*3)]
-	# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
-
-	num_epochs = args.epochs
-
-	print(model)
-	print("Num parameters: {}".format(model.num_parameters()))
-
 	num_epochs_no_improvements = 0
 	best_val_loss = np.inf
 	no_improvements_patience = 5
 	no_improvements_min_epochs = 10
 
 	if args.mode == "train":
+		model = None
+		if args.use_variational_autoencoder:
+			model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+		else:
+			model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+		print("Using: {}".format(type(model).__name__))
+
+		if cuda_available:
+			print("Moving model to gpu...")
+			model = model.cuda()
+
+		opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*3), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*3)]
+		# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
+
+		num_epochs = args.epochs
+
+		print(model)
+		print("Num parameters: {}".format(model.num_parameters()))
+
 		for current_epoch in range(num_epochs):
 
 			start_time = time.time()
@@ -319,14 +319,29 @@ def main(args):
 			# schedulers[1].step()
 
 			if args.save:
-				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+				if args.no_state_dict:
+					torch.save(model, os.path.join(model_save_path, "{:04d}.model".format(current_epoch + 1)))
+				else:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
 		assert (args.weights), "No weights file specified!"
 
 		device = torch.device('cpu')
-		model.load_state_dict(torch.load(args.weights, map_location=device))
+		model = None
+		if args.no_state_dict:
+			model = torch.load(args.weights, map_location=device)
+		else:
+			if args.use_variational_autoencoder:
+				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+			else:
+				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+			print("Using: {}".format(type(model).__name__))
+
+			model.load_state_dict(torch.load(args.weights, map_location=device))
+
 		model.eval()
 		# Use training examples for now to test
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
@@ -373,7 +388,18 @@ def main(args):
 		assert (args.weights), "No weights file specified!"
 
 		device = torch.device('cpu')
-		model.load_state_dict(torch.load(args.weights, map_location=device))
+		model = None
+		if args.no_state_dict:
+			model = torch.load(args.weights, map_location=device)
+		else:
+			if args.use_variational_autoencoder:
+				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+			else:
+				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+			print("Using: {}".format(type(model).__name__))
+
+			model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
 
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
@@ -412,7 +438,18 @@ def main(args):
 		assert (args.weights), "No weights file specified!"
 
 		device = torch.device('cpu')
-		model.load_state_dict(torch.load(args.weights, map_location=device))
+		model = None
+		if args.no_state_dict:
+			model = torch.load(args.weights, map_location=device)
+		else:
+			if args.use_variational_autoencoder:
+				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+			else:
+				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+			print("Using: {}".format(type(model).__name__))
+
+			model.load_state_dict(torch.load(args.weights, map_location=device))
 		model.eval()
 
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
@@ -467,7 +504,10 @@ def main(args):
 	if args.mode == "infer":
 		raise Exception("This mode needs to be reimplemented") # Remove if reimplemented
 		
-		model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
+		if args.no_state_dict:
+			model = torch.load(args.weights)
+		else:
+			model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
 
 		gt_val = []
 		pred_val = []
@@ -527,6 +567,7 @@ if __name__ == "__main__":
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
 	parser.add_argument("--seed", type=int, default=None, help="Initializes Python, Numpy and Torch with this random seed. !!NOTE: Before running the script export PYTHONHASHSEED=0 as environment variable.!!")
 	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
+	parser.add_argument("--no_state_dict", action="store_true", help="If set, saves the whole model instead of just the weights.")
 
 	args = parser.parse_args()
 

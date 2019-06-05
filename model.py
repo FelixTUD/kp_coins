@@ -48,6 +48,7 @@ class Predictor(nn.Module):
 		self.bn_2 = nn.BatchNorm1d(hidden_dim)
 		
 		self.fc_out = nn.Linear(hidden_dim, output_dim)
+		self.bn_3 = nn.BatchNorm1d(output_dim)
 
 		self.relu = nn.ReLU()
 		self.sigmoid = nn.Sigmoid() # To force outputs between 0-1 for logsoftmax. Might help with unexpected dips??
@@ -59,7 +60,14 @@ class Predictor(nn.Module):
 		input = self.relu(self.fc2(input))
 		input = self.bn_2(input)
 
-		return self.sigmoid(self.fc_out(input))
+		# Old way
+		# return self.sigmoid(self.fc_out(input))
+
+		# New way
+		input = self.sigmoid(self.fc_out(input))
+		input = self.bn_3(input)
+
+		return input
 
 class DecoderLSTM(nn.Module):
 	def __init__(self, hidden_dim, feature_dim):
