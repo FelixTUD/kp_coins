@@ -197,6 +197,36 @@ def get_comment_string(args):
 	comment += "seed{}".format(args.seed)
 	return comment
 
+def plot_confusion_matrix(cm, classes,
+                          title=None,
+                          cmap=plt.cm.Blues):
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
+    fig.tight_layout()
+    plt.show()
+
 def main(args):
 	if not args.seed:
 		args.seed = (int(time.time()*1000000) % (2**32)) 
@@ -252,7 +282,7 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*2), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*2)]
+	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*3), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*3)]
 	# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
 
 	num_epochs = args.epochs
@@ -301,7 +331,7 @@ def main(args):
 		# Use training examples for now to test
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
 		coins = args.coins
-		colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k'][:len(args.coins)]
+		colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 
 		plot_colors = []
 		[plot_colors.extend(x*num_examples_per_class) for x in colors]
@@ -323,9 +353,18 @@ def main(args):
 					all_encodings[i] = encoded_input[0]
 					i += 1
 				print("")
-			embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
+		
+		embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
 
 		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
+
+		# box = ax.get_position()
+		# ax.set_position([box.x0, box.y0 + box.height * 0.1,
+  #                		box.width, box.height * 0.9])
+
+		# ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
+  #         		  fancybox=True, shadow=True, ncol=5)
+
 		plt.show()
 
 	if args.mode == "confusion":
@@ -361,7 +400,10 @@ def main(args):
 
 		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
 		print(confusion_matrix)
-		print(np.divide(confusion_matrix, num_examples_per_class))
+		norm_cm = np.divide(confusion_matrix, num_examples_per_class)
+		print(norm_cm)
+
+		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix")
 
 	if args.mode == "roc":
 		from sklearn.metrics import roc_curve, auc
@@ -380,20 +422,16 @@ def main(args):
 		predicted = []
 
 		with torch.no_grad():
-			for coin in coins:
-				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+			for i, data in enumerate(complete_dataset):
+				print("\rTesting: {}/{}".format(i + 1, len(complete_dataset)), end="")
 
-				for i, data in enumerate(coin_data):
-					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
+				input_tensor, label = data["input"], data["label"]
+				expected.append(label)
 
-					input_tensor, label = data["input"], data["label"]
-					expected.append(label)
+				predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
+				predicted_category = predicted_category.cpu().numpy()
 
-					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
-					predicted_category = predicted_category.cpu().numpy()
-
-					predicted.append(np.argmax(predicted_category))
-				print("")
+				predicted.append(np.argmax(predicted_category))
 
 		fpr = dict()
 		tpr = dict()
@@ -408,7 +446,7 @@ def main(args):
 			fpr[class_index], tpr[class_index], _ = roc_curve(one_vs_all_expected, one_vs_all_predicted)
 			roc_auc[class_index] = auc(fpr[class_index], tpr[class_index])
 
-		colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'cyan'])
+		colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'])
 		lw = 2
 		plt.figure()
 		for i, color in zip(range(len(coins)), colors):
