@@ -193,7 +193,8 @@ def get_comment_string(args):
 	comment += "lstm_" if args.use_lstm else "gru_"
 	comment += "s{}_".format(args.shrink)
 	comment += "e{}_".format(args.epochs)
-	comment += "c{}".format(args.coins)
+	comment += "c{}_".format(args.coins)
+	comment += "seed{}".format(args.seed)
 	return comment
 
 def main(args):
@@ -251,7 +252,7 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001)]
+	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*2), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*2)]
 	# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
 
 	num_epochs = args.epochs
@@ -413,7 +414,7 @@ def main(args):
 		for i, color in zip(range(len(coins)), colors):
 			plt.plot(fpr[i], tpr[i], color=color, lw=lw,
 					 label='ROC curve of class {0} (area = {1:0.2f})'
-					 ''.format(i, roc_auc[i]))
+					 ''.format(coins[i], roc_auc[i]))
 
 		plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
 		plt.xlim([0.0, 1.0])
