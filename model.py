@@ -44,7 +44,7 @@ class Predictor(nn.Module):
 		self.fc1 = nn.Linear(input_dim, hidden_dim)
 		self.bn_1 = nn.BatchNorm1d(hidden_dim)
 
-		self.fc2 = nn.Linear(input_dim, hidden_dim)
+		self.fc2 = nn.Linear(hidden_dim, hidden_dim)
 		self.bn_2 = nn.BatchNorm1d(hidden_dim)
 		
 		self.fc_out = nn.Linear(hidden_dim, output_dim)
