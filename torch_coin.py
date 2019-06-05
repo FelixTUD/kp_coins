@@ -43,10 +43,10 @@ global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
 
-def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, train_autoencoder=True, train_categorizer=True):
+def train(model, dataloader, optimizer, save_fig=False, writer=None, train_autoencoder=True, train_categorizer=True):
 	global global_step_train
 	global global_fig_count
-	model = model.train()
+	model.train()
 	num_steps = len(dataloader)
 
 	loss_history = np.empty(num_steps)
@@ -55,10 +55,12 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 	loss_cel = nn.CrossEntropyLoss()
 
 	prediction_loss = None
+	freeze = False
 	if type(model) is Autoencoder:
 		prediction_loss = calculate_loss_non_generative
 	elif type(model) is VariationalAutoencoder:
 		prediction_loss = calculate_loss_generative
+		freeze = True
 
 	epsilon = None
 	if torch.cuda.is_available():
@@ -100,7 +102,8 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 
 		del loss # Necessary?
 
-		model.freeze_autoencoder()
+		if freeze:
+			model.freeze_autoencoder()
 	
 		predicted_category = model(input=input_tensor, teacher_input=None, use_predictor=True)
 		loss = loss_cel(input=predicted_category+epsilon, target=output)
@@ -120,7 +123,8 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 
 		del loss # Necessary?
 
-		model.unfreeze_autoencoder()
+		if freeze:
+			model.unfreeze_autoencoder()
 
 		global_step_train += 1
 
@@ -131,7 +135,7 @@ def train(model, dataloader, optimizer, loss_fn, save_fig=False, writer=None, tr
 			
 	return {"loss_reconstruction": loss_history.mean(), "loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
 
-def evaluate(epoch, model, dataloader, loss_fn, start_of_sequence=-1, writer=None):
+def evaluate(model, dataloader, start_of_sequence=-1, writer=None):
 	global global_step_valid
 	model.eval()
 	
@@ -194,7 +198,7 @@ def get_comment_string(args):
 
 def main(args):
 	if not args.seed:
-		args.seed = int(time.time()) 
+		args.seed = (int(time.time()*1000000) % (2**32)) 
 
 	print("Random seed: {}".format(args.seed))
 	torch.manual_seed(args.seed)
@@ -247,9 +251,8 @@ def main(args):
 		print("Moving model to gpu...")
 		model = model.cuda()
 
-	opti = [optim.Adam(model.get_autoencoder_param(), lr=0.005), optim.Adam(model.get_predictor_param(), lr=0.01)]
-	schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=np.arange(args.epochs)[::20]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.append([5, 10, 15, 20], np.arange(20, args.epochs)[::30]))]
-	loss_fn = custom_mse_loss
+	opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001)]
+	# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
 
 	num_epochs = args.epochs
 
@@ -265,13 +268,13 @@ def main(args):
 		for current_epoch in range(num_epochs):
 
 			start_time = time.time()
-			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, loss_fn=custom_mse_loss, save_fig=args.save_figures ,writer=writer)
+			train_history = train(model=model, dataloader=training_dataloader, optimizer=opti, save_fig=args.save_figures, writer=writer)
 			end_time = time.time()
 
 			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 			
 			start_time = time.time()
-			validation_history = evaluate(epoch=current_epoch+1, model=model, dataloader=validation_dataloader, loss_fn=custom_mse_loss, writer=writer)
+			validation_history = evaluate(model=model, dataloader=validation_dataloader, writer=writer)
 			end_time = time.time()
 
 			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
@@ -281,8 +284,8 @@ def main(args):
 			print(get_dict_string(validation_history, "val: "))
 			print("---")
 
-			# schedulers[0].step(train_history["loss_mean"])
-			# schedulers[1].step(validation_history["accuracy"])
+			# schedulers[0].step()
+			# schedulers[1].step()
 
 			if args.save:
 				torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
@@ -326,6 +329,7 @@ def main(args):
 
 	if args.mode == "confusion":
 		from sklearn.metrics import confusion_matrix
+
 		assert (args.weights), "No weights file specified!"
 
 		device = torch.device('cpu')
@@ -357,6 +361,69 @@ def main(args):
 		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
 		print(confusion_matrix)
 		print(np.divide(confusion_matrix, num_examples_per_class))
+
+	if args.mode == "roc":
+		from sklearn.metrics import roc_curve, auc
+		from itertools import cycle
+
+		assert (args.weights), "No weights file specified!"
+
+		device = torch.device('cpu')
+		model.load_state_dict(torch.load(args.weights, map_location=device))
+		model.eval()
+
+		num_examples_per_class = complete_dataset.get_num_coins_per_class()
+		coins = args.coins
+
+		expected = []
+		predicted = []
+
+		with torch.no_grad():
+			for coin in coins:
+				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+				for i, data in enumerate(coin_data):
+					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
+
+					input_tensor, label = data["input"], data["label"]
+					expected.append(label)
+
+					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
+					predicted_category = predicted_category.cpu().numpy()
+
+					predicted.append(np.argmax(predicted_category))
+				print("")
+
+		fpr = dict()
+		tpr = dict()
+		roc_auc = dict()
+
+		for class_index in range(len(coins)):
+			expected = np.array(expected)
+			predicted = np.array(predicted)
+			one_vs_all_expected = np.where(expected == class_index, 1, 0)
+			one_vs_all_predicted = np.where(predicted == class_index, 1, 0)
+
+			fpr[i], tpr[i], _ = roc_curve(one_vs_all_expected, one_vs_all_predicted)
+			roc_auc[i] = auc(fpr[i], tpr[i])
+
+		colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'cyan'])
+		lw = 2
+		plt.figure()
+		for i, color in zip(range(len(coins)), colors):
+			plt.plot(fpr[i], tpr[i], color=color, lw=lw,
+					 label='ROC curve of class {0} (area = {1:0.2f})'
+					 ''.format(i, roc_auc[i]))
+
+		plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+		plt.xlim([0.0, 1.0])
+		plt.ylim([0.0, 1.05])
+		plt.xlabel('False Positive Rate')
+		plt.ylabel('True Positive Rate')
+		plt.title('Receiver operating characteristic example')
+		plt.legend(loc="lower right")
+		plt.show()
+
 
 	if args.mode == "infer":
 		raise Exception("This mode needs to be reimplemented") # Remove if reimplemented

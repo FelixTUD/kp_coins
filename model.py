@@ -43,6 +43,10 @@ class Predictor(nn.Module):
 
 		self.fc1 = nn.Linear(input_dim, hidden_dim)
 		self.bn_1 = nn.BatchNorm1d(hidden_dim)
+
+		self.fc2 = nn.Linear(input_dim, hidden_dim)
+		self.bn_2 = nn.BatchNorm1d(hidden_dim)
+		
 		self.fc_out = nn.Linear(hidden_dim, output_dim)
 
 		self.relu = nn.ReLU()
@@ -51,6 +55,10 @@ class Predictor(nn.Module):
 	def forward(self, input):
 		input = self.relu(self.fc1(input))
 		input = self.bn_1(input)
+
+		input = self.relu(self.fc2(input))
+		input = self.bn_2(input)
+
 		return self.sigmoid(self.fc_out(input))
 
 class DecoderLSTM(nn.Module):
@@ -77,6 +85,19 @@ class DecoderLSTM(nn.Module):
 		else:
 			return self.time_dist_act(self.fc(reconstruction))
 
+class VariationalIntermediate(nn.Module):
+	def __init__(self, input_dim, output_dim):
+		super(VariationalIntermediate, self).__init__()
+
+		self.mufc = nn.Linear(input_dim, output_dim)
+		self.logvarfc = nn.Linear(input_dim, output_dim)
+
+	def forward(self, input):
+		mu = self.mufc(input)
+		logvar = self.logvarfc(input)
+
+		return mu, logvar
+
 class VariationalAutoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
 		super(VariationalAutoencoder, self).__init__()
@@ -84,8 +105,10 @@ class VariationalAutoencoder(nn.Module):
 		self.use_lstm = args.use_lstm
 		self.hidden_dim = hidden_dim
 
-		self.mufc = nn.Linear(hidden_dim, hidden_dim//2)
-		self.logvarfc = nn.Linear(hidden_dim, hidden_dim//2)
+		self.intermediate = VariationalIntermediate(hidden_dim, hidden_dim//2)
+
+		# self.mufc = nn.Linear(hidden_dim, hidden_dim//2)
+		# self.logvarfc = nn.Linear(hidden_dim, hidden_dim//2)
 
 		if self.use_lstm:
 			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
@@ -105,8 +128,10 @@ class VariationalAutoencoder(nn.Module):
 	def forward(self, input, teacher_input=None, use_predictor=False, return_hidden=False):
 		_, last_hidden = self.encoder(input)
 
-		mu = self.mufc(last_hidden[0][0])
-		logvar = self.logvarfc(last_hidden[0][0])
+		# mu = self.mufc(last_hidden[0][0])
+		# logvar = self.logvarfc(last_hidden[0][0])
+
+		mu, logvar = self.intermediate(last_hidden[0][0])
 
 		z = self.reparameterize(mu=mu, logvar=logvar)
 
@@ -128,11 +153,13 @@ class VariationalAutoencoder(nn.Module):
 
 			return reconstructed, mu, logvar
 
-	def get_autoencoder_param(self):
-		return list(self.encoder.parameters()) + list(self.decoder.parameters())
+	def get_encoder_param(self):
+		return list(self.encoder.parameters()) + list(self.intermediate.parameters())
+
+	def get_decoder_param(self):
+		return list(self.decoder.parameters())
 
 	def get_predictor_param(self):
-		# return list(self.encoder.parameters()) + list(self.predictor.parameters())
 		return list(self.predictor.parameters())
 
 	def num_parameters(self):
@@ -184,8 +211,11 @@ class Autoencoder(nn.Module):
 		else:
 			return self.decoder(teacher_input, last_hidden)
 
-	def get_autoencoder_param(self):
-		return list(self.encoder.parameters()) + list(self.decoder.parameters())
+	def get_encoder_param(self):
+		return list(self.encoder.parameters())
+
+	def get_decoder_param(self):
+		return list(self.decoder.parameters())
 
 	def get_predictor_param(self):
 		# return list(self.encoder.parameters()) + list(self.predictor.parameters())
