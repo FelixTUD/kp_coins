@@ -405,8 +405,8 @@ def main(args):
 			one_vs_all_expected = np.where(expected == class_index, 1, 0)
 			one_vs_all_predicted = np.where(predicted == class_index, 1, 0)
 
-			fpr[i], tpr[i], _ = roc_curve(one_vs_all_expected, one_vs_all_predicted)
-			roc_auc[i] = auc(fpr[i], tpr[i])
+			fpr[class_index], tpr[class_index], _ = roc_curve(one_vs_all_expected, one_vs_all_predicted)
+			roc_auc[class_index] = auc(fpr[class_index], tpr[class_index])
 
 		colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'cyan'])
 		lw = 2
