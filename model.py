@@ -46,9 +46,12 @@ class Predictor(nn.Module):
 
 		self.fc2 = nn.Linear(hidden_dim, hidden_dim)
 		self.bn_2 = nn.BatchNorm1d(hidden_dim)
+
+		#self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+		#self.bn_3 = nn.BatchNorm1d(hidden_dim)
 		
 		self.fc_out = nn.Linear(hidden_dim, output_dim)
-		self.bn_3 = nn.BatchNorm1d(output_dim)
+		self.bn_out = nn.BatchNorm1d(output_dim)
 
 		self.relu = nn.ReLU()
 		self.sigmoid = nn.Sigmoid() # To force outputs between 0-1 for logsoftmax. Might help with unexpected dips??
@@ -60,12 +63,15 @@ class Predictor(nn.Module):
 		input = self.relu(self.fc2(input))
 		input = self.bn_2(input)
 
+		#input = self.relu(self.fc3(input))
+		#input = self.bn_3(input)
+
 		# Old way
 		# return self.sigmoid(self.fc_out(input))
 
 		# New way
 		input = self.sigmoid(self.fc_out(input))
-		input = self.bn_3(input)
+		input = self.bn_out(input)
 
 		return input
 

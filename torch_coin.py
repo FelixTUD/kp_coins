@@ -244,7 +244,7 @@ def main(args):
 	print("Worker thread count: {}".format(max(0, args.cpu_count)))
 
 	torch.set_num_threads(max(0, args.cpu_count))
-	cuda_available = torch.cuda.is_available()
+	cuda_available = torch.cuda.is_available() and not args.run_cpu
 
 	writer = SummaryWriter(comment=get_comment_string(args))
 	model_save_dir_name = writer.log_dir.split("/")[-1]
@@ -328,7 +328,10 @@ def main(args):
 		from sklearn.manifold import TSNE
 		assert (args.weights), "No weights file specified!"
 
-		device = torch.device('cpu')
+		if cuda_available:
+			device = torch.device('cuda')
+		else:
+			device = torch.device('cpu')
 		model = None
 		if args.no_state_dict:
 			model = torch.load(args.weights, map_location=device)
@@ -387,7 +390,10 @@ def main(args):
 
 		assert (args.weights), "No weights file specified!"
 
-		device = torch.device('cpu')
+		if cuda_available:
+			device = torch.device('cuda')
+		else:
+			device = torch.device('cpu')
 		model = None
 		if args.no_state_dict:
 			model = torch.load(args.weights, map_location=device)
@@ -437,7 +443,10 @@ def main(args):
 
 		assert (args.weights), "No weights file specified!"
 
-		device = torch.device('cpu')
+		if cuda_available:
+			device = torch.device('cuda')
+		else:
+			device = torch.device('cpu')
 		model = None
 		if args.no_state_dict:
 			model = torch.load(args.weights, map_location=device)
@@ -568,6 +577,7 @@ if __name__ == "__main__":
 	parser.add_argument("--seed", type=int, default=None, help="Initializes Python, Numpy and Torch with this random seed. !!NOTE: Before running the script export PYTHONHASHSEED=0 as environment variable.!!")
 	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
 	parser.add_argument("--no_state_dict", action="store_true", help="If set, saves the whole model instead of just the weights.")
+	parser.add_argument("--run_cpu", action="store_true", help="If set, calculates on the CPU, even if GPU is available.") # not functional
 
 	args = parser.parse_args()
 
