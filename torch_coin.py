@@ -18,8 +18,8 @@ import random
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
-from model import Autoencoder, VariationalAutoencoder
+from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator, CollatorTensor
+from model import Autoencoder, VariationalAutoencoder, CNNCategorizer
 
 def custom_mse_loss(y_pred, y_true):
 	return ((y_true-y_pred)**2).sum(1).mean()
@@ -72,7 +72,6 @@ def train(model, dataloader, optimizer, save_fig=False, writer=None, train_autoe
 		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
 
 		input_tensor, reversed_input, teacher_input, output = sample_batched["input"], sample_batched["reversed_input"], sample_batched["teacher_input"], sample_batched["label"]
-
 		model_output = model(input=input_tensor, teacher_input=teacher_input)
 		loss = prediction_loss(model_output, reversed_input)
 
@@ -134,6 +133,55 @@ def train(model, dataloader, optimizer, save_fig=False, writer=None, train_autoe
 		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step_train // num_steps, scalar_value=acc_history.mean())
 			
 	return {"loss_reconstruction": loss_history.mean(), "loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
+
+def trainCNN(model, dataloader, optimizer, save_fig=False, writer=None):
+	global global_step_train
+	global global_fig_count
+	model.train()
+	num_steps = len(dataloader)
+
+	loss_history_cel = np.empty(num_steps)
+	acc_history = np.empty(num_steps)
+	loss_cel = nn.CrossEntropyLoss()
+
+	epsilon = None
+	if torch.cuda.is_available():
+		epsilon = torch.tensor(1e-7).cuda()
+	else:
+		epsilon = torch.tensor(1e-7)
+
+	for i_batch, sample_batched in enumerate(dataloader):
+		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+
+		input_tensor, output = sample_batched["input"], sample_batched["label"]
+		#print(input_tensor.shape)
+		predicted_category = model(input=input_tensor)
+		#print(predicted_category.shape)
+		predicted_category = predicted_category.squeeze(0)
+		loss = loss_cel(input=predicted_category+epsilon, target=output)
+
+		loss_history_cel[i_batch] = loss.item()
+		acc = calc_acc(input=predicted_category, target=output)
+		acc_history[i_batch] = acc
+
+		if writer:
+			writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
+			writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
+
+		optimizer.zero_grad()
+		loss.backward()
+		optimizer.step()
+
+		del loss # Necessary?
+
+		global_step_train += 1
+
+	if writer:
+		writer.add_scalar("per_epoch/loss/categorization", global_step=global_step_train // num_steps, scalar_value=loss_history_cel.mean())
+		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step_train // num_steps, scalar_value=0)
+		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step_train // num_steps, scalar_value=acc_history.mean())
+			
+	return {"loss_reconstruction": 0, "loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
 
 def evaluate(model, dataloader, start_of_sequence=-1, writer=None):
 	global global_step_valid
@@ -266,10 +314,13 @@ def main(args):
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
-	training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
+	if args.mode == "trainCNN":
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=CollatorTensor())	
+	else:
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
 	validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
-
+	
 	num_epochs_no_improvements = 0
 	best_val_loss = np.inf
 	no_improvements_patience = 5
@@ -323,6 +374,53 @@ def main(args):
 					torch.save(model, os.path.join(model_save_path, "{:04d}.model".format(current_epoch + 1)))
 				else:
 					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+
+	if args.mode == "trainCNN":
+		model = None
+		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+
+		print("Using: {}".format(type(model).__name__))
+
+		if cuda_available:
+			print("Moving model to gpu...")
+			model = model.cuda()
+
+		opti = optim.Adam(model.parameters(), lr=0.001)
+		# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
+
+		num_epochs = args.epochs
+
+		print(model)
+		print("Num parameters: {}".format(model.num_parameters()))
+
+		for current_epoch in range(num_epochs):
+
+			start_time = time.time()
+			train_history = trainCNN(model=model, dataloader=training_dataloader, optimizer=opti, save_fig=args.save_figures, writer=writer)
+			end_time = time.time()
+
+			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
+			
+			#start_time = time.time()
+			#validation_history = evaluateCNN(model=model, dataloader=validation_dataloader, writer=writer)
+			#end_time = time.time()
+
+			#print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+
+			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
+			print(get_dict_string(train_history, "train: "))
+			#print(get_dict_string(validation_history, "val: "))
+			print("---")
+
+			# schedulers[0].step()
+			# schedulers[1].step()
+
+			if args.save:
+				if args.no_state_dict:
+					torch.save(model, os.path.join(model_save_path, "{:04d}.model".format(current_epoch + 1)))
+				else:
+					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
@@ -384,6 +482,7 @@ def main(args):
   #         		  fancybox=True, shadow=True, ncol=5)
 
 		plt.show()
+		
 
 	if args.mode == "confusion":
 		from sklearn.metrics import confusion_matrix

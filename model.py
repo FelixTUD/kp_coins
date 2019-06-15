@@ -249,3 +249,46 @@ class Autoencoder(nn.Module):
 			param.requires_grad = True
 		for param in self.decoder.parameters():
 			param.requires_grad = True
+
+
+class CNNCategorizer(nn.Module):
+	def __init__(self, feature_dim, num_coins, args):
+		super(CNNCategorizer, self).__init__()
+		self.conv1 = nn.Conv1d(feature_dim, 64, 5)
+		self.bnorm1 = nn.BatchNorm1d(64)
+		self.pool1 = nn.MaxPool1d(2)
+		self.conv2 = nn.Conv1d(64, 64, 5)
+		self.bnorm2 = nn.BatchNorm1d(64)
+		self.pool2 = nn.MaxPool1d(2)
+		self.conv3 = nn.Conv1d(64, 1, 5)
+		self.bnorm3 = nn.BatchNorm1d(1)
+		self.apool_out = nn.AdaptiveMaxPool1d(100)
+		self.fc_out = nn.Linear(100, num_coins)
+		self.bnorm_out = nn.BatchNorm1d(num_coins)
+		self.sigmoid = nn.Sigmoid()
+		self.relu = nn.ReLU()
+		
+
+	def forward(self, input):
+		input = self.conv1(input)
+		input = self.bnorm1(input)
+		input = self.relu(input)
+		input = self.pool1(input)
+
+		input = self.conv2(input)
+		input = self.bnorm2(input)
+		input = self.relu(input)
+		input = self.pool2(input)
+
+		input = self.conv3(input)
+		input = self.bnorm3(input)
+		input = self.relu(input)
+		input = self.apool_out(input)
+
+		input = self.fc_out(input)
+		#input = self.bnorm_out(input)
+		input = self.sigmoid(input)
+		return input
+
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())

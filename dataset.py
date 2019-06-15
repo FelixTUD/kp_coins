@@ -24,6 +24,13 @@ class Collator:
 				"teacher_input": pack_sequence(teacher_inputs, enforce_sorted=False), 
 				"label": default_collate(labels)}
 
+class CollatorTensor:
+	def __call__(self, batch):
+		inputs = [x["input"] for x in batch]
+		labels = [x["label"] for x in batch]
+		return {"input": default_collate(inputs).unsqueeze(0),
+				"label": default_collate(labels)}
+
 class NewCoinDataset(Dataset):
 	def __init__(self, args):
 		import librosa as rosa 
@@ -81,7 +88,7 @@ class NewCoinDataset(Dataset):
 
 	def convert_to_tensor(self, data):
 		tensor = torch.from_numpy(data).float()
-
+		#print(tensor.unsqueeze(0).shape)
 		if self.use_cuda:
 			tensor = tensor.cuda()
 
@@ -99,6 +106,7 @@ class NewCoinDataset(Dataset):
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
 		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
 		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
+		#print(timeseries.shape)
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 
 		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
@@ -249,7 +257,7 @@ class CoinDataset(Dataset):
 
 	def convert_to_tensor(self, data):
 		tensor = torch.from_numpy(data).float()
-
+		print(tensor.shape())
 		if self.cuda_available:
 			tensor = tensor.cuda()
 
