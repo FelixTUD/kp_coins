@@ -45,6 +45,11 @@ class NewCoinDataset(Dataset):
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
+		if args.mode == "trainCNN":
+			self.cnn = True
+		else:
+			self.cnn = False
+
 		if args.coins:
 			self.coins = list(map(str, args.coins))
 		else:
@@ -105,7 +110,9 @@ class NewCoinDataset(Dataset):
 
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
 		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
-		timeseries = self.convert_to_tensor(timeseries).view(timeseries.size, 1)
+		timeseries = self.convert_to_tensor(timeseries)
+		if not self.cnn:
+			timeseries = timeseries.view(timeseries.size, 1)
 		#print(timeseries.shape)
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 

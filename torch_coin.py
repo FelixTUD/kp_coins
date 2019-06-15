@@ -225,6 +225,42 @@ def evaluate(model, dataloader, start_of_sequence=-1, writer=None):
 
 	return {"loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
 
+def evaluateCNN(model, dataloader, writer=None):
+	global global_step_valid
+	model.eval()
+	
+	num_steps = len(dataloader)
+
+	loss_history_cel = np.empty(num_steps)
+	acc_history = np.empty(num_steps)
+	loss_cel = nn.CrossEntropyLoss()
+
+	with torch.no_grad():
+		for i_batch, sample_batched in enumerate(dataloader):
+			print("{}/{}".format(i_batch + 1, num_steps), end="\r")
+			input_tensor, output = sample_batched["input"], sample_batched["label"]
+
+			predicted_category = model(input=input_tensor)
+			predicted_category = predicted_category.squeeze(0)
+			loss = loss_cel(input=predicted_category, target=output)
+
+			loss_history_cel[i_batch] = loss.item()
+			acc = calc_acc(input=predicted_category, target=output)
+			acc_history[i_batch] = acc
+
+			if writer:
+				writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
+
+			del loss # Necessary?
+
+			global_step_valid += 1
+
+		if writer:
+			writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step_valid // num_steps, scalar_value=loss_history_cel.mean())
+			writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step_valid // num_steps, scalar_value=acc_history.mean())
+
+	return {"loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
+
 def get_dict_string(d, prefix=""):
 	result = prefix
 	for k, v in d.items():
@@ -315,10 +351,12 @@ def main(args):
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
 	if args.mode == "trainCNN":
-		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=CollatorTensor())	
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=CollatorTensor())
+		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0, collate_fn=CollatorTensor())
 	else:
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
-	validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 	
 	num_epochs_no_improvements = 0
@@ -386,7 +424,6 @@ def main(args):
 			model = model.cuda()
 
 		opti = optim.Adam(model.parameters(), lr=0.001)
-		# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
 
 		num_epochs = args.epochs
 
@@ -401,19 +438,16 @@ def main(args):
 
 			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
 			
-			#start_time = time.time()
-			#validation_history = evaluateCNN(model=model, dataloader=validation_dataloader, writer=writer)
-			#end_time = time.time()
+			start_time = time.time()
+			validation_history = evaluateCNN(model=model, dataloader=validation_dataloader, writer=writer)
+			end_time = time.time()
 
-			#print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
+			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
 
 			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
 			print(get_dict_string(train_history, "train: "))
-			#print(get_dict_string(validation_history, "val: "))
+			print(get_dict_string(validation_history, "val: "))
 			print("---")
-
-			# schedulers[0].step()
-			# schedulers[1].step()
 
 			if args.save:
 				if args.no_state_dict:
