@@ -110,9 +110,10 @@ class NewCoinDataset(Dataset):
 
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
 		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
+		timeseries_size = timeseries.size
 		timeseries = self.convert_to_tensor(timeseries)
 		if not self.cnn:
-			timeseries = timeseries.view(timeseries.size, 1)
+			timeseries = timeseries.view(timeseries_size, 1)
 		#print(timeseries.shape)
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 
