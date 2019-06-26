@@ -66,6 +66,12 @@ class NewCoinDataset(Dataset):
 		
 		self.sample_space = self.get_sample_space()
 
+		self.max_length = 0
+		for coin, values in self.sample_space.items():
+			for gain, example in values:
+				self.max_length = max(len(self.data_file[coin][gain][example]["values"]) // self.shrink, self.max_length)
+		print("Maximum timeseries length: {}".format(self.max_length))
+
 		print("Preloading data to {} memory ...".format("gpu" if self.use_cuda else "cpu"))
 		self.preload_samples()
 
@@ -87,6 +93,9 @@ class NewCoinDataset(Dataset):
 	def preprocess_time_series(self, timeseries):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
 
+		if self.cnn:
+			timeseries = self.rosa.util.fix_length(timeseries, self.max_length)
+
 		min = np.min(timeseries)
 		max = np.max(timeseries)
 		return (2*(timeseries - min) / (max - min)) - 1
@@ -103,21 +112,26 @@ class NewCoinDataset(Dataset):
 		return np.array(self.coins.index(coin))
 
 	def generate_data(self, timeseries, coin):
-		reversed_timeseries = np.flip(timeseries).copy() # Negative strides (noch) nicht supported von pytorch, deshalb copy()
-		teacher_input = np.zeros(reversed_timeseries.shape)
-		teacher_input[1:] = reversed_timeseries[1:]
-		teacher_input[0] = -1
+		if not self.cnn:
+			reversed_timeseries = np.flip(timeseries).copy() # Negative strides (noch) nicht supported von pytorch, deshalb copy()
+			teacher_input = np.zeros(reversed_timeseries.shape)
+			teacher_input[1:] = reversed_timeseries[1:]
+			teacher_input[0] = -1
 
-		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
-		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
+			reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
+			teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
 		timeseries_size = timeseries.size
 		timeseries = self.convert_to_tensor(timeseries)
 		if not self.cnn:
 			timeseries = timeseries.view(timeseries_size, 1)
+		else:
+			timeseries = timeseries.unsqueeze(0)
 		#print(timeseries.shape)
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
-
-		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
+		if self.cnn:
+			return {"input": timeseries, "label": coin_class}
+		else:
+			return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 
 	def preload_samples(self):
 		for coin, samples in self.sample_space.items():

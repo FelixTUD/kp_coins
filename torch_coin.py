@@ -157,7 +157,7 @@ def trainCNN(model, dataloader, optimizer, save_fig=False, writer=None):
 		#print(input_tensor.shape)
 		predicted_category = model(input=input_tensor)
 		#print(predicted_category.shape)
-		predicted_category = predicted_category.squeeze(0)
+		predicted_category = predicted_category.squeeze(1)
 		loss = loss_cel(input=predicted_category+epsilon, target=output)
 
 		loss_history_cel[i_batch] = loss.item()
@@ -241,7 +241,7 @@ def evaluateCNN(model, dataloader, writer=None):
 			input_tensor, output = sample_batched["input"], sample_batched["label"]
 
 			predicted_category = model(input=input_tensor)
-			predicted_category = predicted_category.squeeze(0)
+			predicted_category = predicted_category.squeeze(1)
 			loss = loss_cel(input=predicted_category, target=output)
 
 			loss_history_cel[i_batch] = loss.item()
@@ -351,8 +351,8 @@ def main(args):
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
 	if args.mode == "trainCNN":
-		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=CollatorTensor())
-		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0, collate_fn=CollatorTensor())
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 	else:
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
 		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)

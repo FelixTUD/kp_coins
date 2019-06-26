@@ -251,43 +251,48 @@ class Autoencoder(nn.Module):
 			param.requires_grad = True
 
 
+class ConvLayer(nn.Module):
+	def __init__(self, in_channels, out_channels, filter_size):
+		super(ConvLayer, self).__init__()
+		self.conv = nn.Conv1d(in_channels, out_channels, filter_size)
+		self.bnorm = nn.BatchNorm1d(out_channels)
+		self.pool = nn.MaxPool1d(2)
+		self.relu = nn.ReLU()
+
+	def forward(self, input):
+		input = self.conv(input)
+		input = self.bnorm(input)
+		input = self.relu(input)
+		input = self.pool(input)
+		return input
+
 class CNNCategorizer(nn.Module):
 	def __init__(self, feature_dim, num_coins, args):
 		super(CNNCategorizer, self).__init__()
-		self.conv1 = nn.Conv1d(feature_dim, 64, 5)
-		self.bnorm1 = nn.BatchNorm1d(64)
-		self.pool1 = nn.MaxPool1d(2)
-		self.conv2 = nn.Conv1d(64, 64, 5)
-		self.bnorm2 = nn.BatchNorm1d(64)
-		self.pool2 = nn.MaxPool1d(2)
-		self.conv3 = nn.Conv1d(64, 1, 5)
-		self.bnorm3 = nn.BatchNorm1d(1)
-		self.apool_out = nn.AdaptiveMaxPool1d(100)
-		self.fc_out = nn.Linear(100, num_coins)
+		
+
+		self.conv_layer = [ConvLayer(feature_dim, 64, 5)]
+
+		for _ in range(5):
+			self.conv_layer.append(ConvLayer(64, 64, 5))
+
+		self.conv_layer.append(ConvLayer(64, 1, 5))
+
+
+		self.fc_out = nn.Linear(48064 // len(self.conv_layer) - 4, num_coins)
 		self.bnorm_out = nn.BatchNorm1d(num_coins)
 		self.sigmoid = nn.Sigmoid()
 		self.relu = nn.ReLU()
 		
 
 	def forward(self, input):
-		input = self.conv1(input)
-		input = self.bnorm1(input)
-		input = self.relu(input)
-		input = self.pool1(input)
-
-		input = self.conv2(input)
-		input = self.bnorm2(input)
-		input = self.relu(input)
-		input = self.pool2(input)
-
-		input = self.conv3(input)
-		input = self.bnorm3(input)
-		input = self.relu(input)
-		input = self.apool_out(input)
+		for conv in self.conv_layer:
+			input = conv(input)
 
 		input = self.fc_out(input)
 		#input = self.bnorm_out(input)
 		input = self.sigmoid(input)
+		#input = self.bnorm_out(input)
 		return input
 
 	def num_parameters(self):
