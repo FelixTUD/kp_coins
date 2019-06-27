@@ -352,7 +352,7 @@ def main(args):
 
 	if args.mode == "trainCNN":
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
-		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 	else:
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
 		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
@@ -415,7 +415,7 @@ def main(args):
 
 	if args.mode == "trainCNN":
 		model = None
-		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), max_length=complete_dataset.get_max_length(), args=args)
+		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), max_length=1024, args=args)
 
 		print("Using: {}".format(type(model).__name__))
 

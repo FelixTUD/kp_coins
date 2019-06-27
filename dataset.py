@@ -42,6 +42,7 @@ class NewCoinDataset(Dataset):
 		self.use_cuda = torch.cuda.is_available()
 		self.preloaded_data = []
 		self.coin_mapping = defaultdict(list)
+		self.window_size = 1024
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
@@ -97,7 +98,8 @@ class NewCoinDataset(Dataset):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
 
 		if self.cnn:
-			timeseries = self.rosa.util.fix_length(timeseries, self.max_length)
+			if timeseries.size < self.window_size:
+				timeseries = self.rosa.util.fix_length(timeseries, self.window_size)
 
 		min = np.min(timeseries)
 		max = np.max(timeseries)
@@ -143,8 +145,12 @@ class NewCoinDataset(Dataset):
 
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
-
-				self.preloaded_data.append((coin, self.generate_data(timeseries, coin)))
+				if self.cnn:
+					for i in range(timeseries.size - self.window_size):
+						window = timeseries[i:i+self.window_size]
+						self.preloaded_data.append((coin, self.generate_data(window, coin)))
+				else:
+					self.preloaded_data.append((coin, self.generate_data(timeseries, coin)))
 
 			print("")
 
