@@ -252,45 +252,61 @@ class Autoencoder(nn.Module):
 
 
 class ConvLayer(nn.Module):
-	def __init__(self, in_channels, out_channels, filter_size):
+	def __init__(self, in_channels, out_channels, filter_size, padding):
 		super(ConvLayer, self).__init__()
-		self.conv = nn.Conv1d(in_channels, out_channels, filter_size)
+		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		self.pool = nn.MaxPool1d(2)
+		#self.pool = nn.MaxPool1d(2)
 		self.relu = nn.ReLU()
 
 	def forward(self, input):
 		input = self.conv(input)
 		input = self.bnorm(input)
 		input = self.relu(input)
-		input = self.pool(input)
+		#input = self.pool(input)
 		return input
 
 class CNNCategorizer(nn.Module):
-	def __init__(self, feature_dim, num_coins, args):
+	def __init__(self, feature_dim, num_coins, max_length, args):
 		super(CNNCategorizer, self).__init__()
-		
+		self.conv1 = ConvLayer(feature_dim, 64, 3, padding=1)
 
-		self.conv_layer = [ConvLayer(feature_dim, 64, 5)]
+		self.conv2 = ConvLayer(64, 64, 3, padding=1)
 
-		for _ in range(5):
-			self.conv_layer.append(ConvLayer(64, 64, 5))
+		self.conv3 = ConvLayer(64, 64, 3, padding=1)
 
-		self.conv_layer.append(ConvLayer(64, 1, 5))
+		self.conv4 = ConvLayer(64, 64, 3, padding=1)
 
+		#self.conv5 = ConvLayer(64, 64, 3, padding=1)
 
-		self.fc_out = nn.Linear(48064 // len(self.conv_layer) - 4, num_coins)
+		#self.conv6 = ConvLayer(64, 64, 3, padding=1)
+
+		self.apool = nn.AvgPool1d(kernel_size=64, padding=32)
+
+		self.fc_out = nn.Linear(((max_length // 64) + 1) * 64, num_coins)
 		self.bnorm_out = nn.BatchNorm1d(num_coins)
 		self.sigmoid = nn.Sigmoid()
-		self.relu = nn.ReLU()
 		
 
 	def forward(self, input):
-		for conv in self.conv_layer:
-			input = conv(input)
+		input = self.conv1(input)
+
+		input = self.conv2(input)
+
+		input = self.conv3(input)
+
+		input = self.conv4(input)
+
+		#input = self.conv5(input)
+
+		#input = self.conv6(input)
+
+		input = self.apool(input)
+
+		input = input.view(input.size(0), -1)
 
 		input = self.fc_out(input)
-		#input = self.bnorm_out(input)
+		input = self.bnorm_out(input)
 		input = self.sigmoid(input)
 		#input = self.bnorm_out(input)
 		return input

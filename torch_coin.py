@@ -415,7 +415,7 @@ def main(args):
 
 	if args.mode == "trainCNN":
 		model = None
-		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
+		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), max_length=complete_dataset.get_max_length(), args=args)
 
 		print("Using: {}".format(type(model).__name__))
 

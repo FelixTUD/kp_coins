@@ -90,6 +90,9 @@ class NewCoinDataset(Dataset):
 	def get_num_loaded_coins(self):
 		return len(self.coins)
 
+	def get_max_length(self):
+		return self.max_length
+
 	def preprocess_time_series(self, timeseries):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
 
