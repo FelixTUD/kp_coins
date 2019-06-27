@@ -24,13 +24,6 @@ class Collator:
 				"teacher_input": pack_sequence(teacher_inputs, enforce_sorted=False), 
 				"label": default_collate(labels)}
 
-class CollatorTensor:
-	def __call__(self, batch):
-		inputs = [x["input"] for x in batch]
-		labels = [x["label"] for x in batch]
-		return {"input": default_collate(inputs).unsqueeze(0),
-				"label": default_collate(labels)}
-
 class NewCoinDataset(Dataset):
 	def __init__(self, args):
 		import librosa as rosa 

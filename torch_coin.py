@@ -18,7 +18,7 @@ import random
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
-from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator, CollatorTensor
+from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
 from model import Autoencoder, VariationalAutoencoder, CNNCategorizer
 
 def custom_mse_loss(y_pred, y_true):
@@ -274,7 +274,12 @@ def get_comment_string(args):
 	comment += "db{}_".format(args.top_db)
 	comment += "hs{}_".format(args.hidden_size)
 	comment += "fc_hd{}_".format(args.fc_hidden_dim)
-	comment += "lstm_" if args.use_lstm else "gru_"
+	if args.mode=="trainCNN":
+		comment += "cnn_"
+	elif args.use_lstm:
+		comment += "lstm_"
+	else:
+		comment += "gru_"
 	comment += "s{}_".format(args.shrink)
 	comment += "e{}_".format(args.epochs)
 	comment += "c{}_".format(args.coins)
@@ -423,7 +428,7 @@ def main(args):
 			print("Moving model to gpu...")
 			model = model.cuda()
 
-		opti = optim.Adam(model.parameters(), lr=0.001)
+		opti = optim.Adam(model.parameters(), lr=0.0001)
 
 		num_epochs = args.epochs
 
