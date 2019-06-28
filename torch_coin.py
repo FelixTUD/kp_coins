@@ -269,17 +269,25 @@ def get_dict_string(d, prefix=""):
 	return result[:-1]
 
 def get_comment_string(args):
-	comment = "gen_" if args.use_variational_autoencoder else "non_gen_"
+	comment = ""
+	if args.use_variational_autoencoder:
+		comment += "gen_"
+	elif args.mode == "trainCNN":
+		comment += "cnn_"
+	else:
+		comment += "non_gen_"
 	comment += "b{}_".format(args.batch_size)
 	comment += "db{}_".format(args.top_db)
-	comment += "hs{}_".format(args.hidden_size)
-	comment += "fc_hd{}_".format(args.fc_hidden_dim)
-	if args.mode=="trainCNN":
-		comment += "cnn_"
-	elif args.use_lstm:
-		comment += "lstm_"
+	if args.mode != "trainCNN":
+		comment += "hs{}_".format(args.hidden_size)
+		comment += "fc_hd{}_".format(args.fc_hidden_dim)
 	else:
-		comment += "gru_"
+		comment += "ws{}_".format(args.window_size)
+	if args.mode != "trainCNN":
+		if args.use_lstm:
+			comment += "lstm_"
+		else:
+			comment += "gru_"
 	comment += "s{}_".format(args.shrink)
 	comment += "e{}_".format(args.epochs)
 	comment += "c{}_".format(args.coins)
@@ -420,7 +428,7 @@ def main(args):
 
 	if args.mode == "trainCNN":
 		model = None
-		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), max_length=1024, args=args)
+		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
 
 		print("Using: {}".format(type(model).__name__))
 
@@ -716,6 +724,7 @@ if __name__ == "__main__":
 	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
 	parser.add_argument("--no_state_dict", action="store_true", help="If set, saves the whole model instead of just the weights.")
 	parser.add_argument("--run_cpu", action="store_true", help="If set, calculates on the CPU, even if GPU is available.") # not functional
+	parser.add_argument("-ws", "--window_size", type=int, default=1024, help="Window size for cnn training. Default 1024.")
 
 	args = parser.parse_args()
 

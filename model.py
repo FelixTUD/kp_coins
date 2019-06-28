@@ -267,7 +267,7 @@ class ConvLayer(nn.Module):
 		return input
 
 class CNNCategorizer(nn.Module):
-	def __init__(self, feature_dim, num_coins, max_length, args):
+	def __init__(self, feature_dim, num_coins, args):
 		super(CNNCategorizer, self).__init__()
 		self.conv1 = ConvLayer(feature_dim, 64, 3, padding=1)
 
@@ -283,7 +283,7 @@ class CNNCategorizer(nn.Module):
 
 		self.apool = nn.AvgPool1d(kernel_size=64, padding=32)
 
-		self.fc_out = nn.Linear(((max_length // 64) + 1) * 64, num_coins)
+		self.fc_out = nn.Linear(((args.window_size // 64) + 1) * 64, num_coins)
 		self.bnorm_out = nn.BatchNorm1d(num_coins)
 		self.sigmoid = nn.Sigmoid()
 		

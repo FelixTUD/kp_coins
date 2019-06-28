@@ -35,14 +35,11 @@ class NewCoinDataset(Dataset):
 		self.use_cuda = torch.cuda.is_available()
 		self.preloaded_data = []
 		self.coin_mapping = defaultdict(list)
-		self.window_size = 1024
+
+		self.cnn = args.mode == "trainCNN"
+		self.window_size = args.window_size
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
-
-		if args.mode == "trainCNN":
-			self.cnn = True
-		else:
-			self.cnn = False
 
 		if args.coins:
 			self.coins = list(map(str, args.coins))
@@ -100,7 +97,7 @@ class NewCoinDataset(Dataset):
 
 	def convert_to_tensor(self, data):
 		tensor = torch.from_numpy(data).float()
-		#print(tensor.unsqueeze(0).shape)
+
 		if self.use_cuda:
 			tensor = tensor.cuda()
 
@@ -124,7 +121,7 @@ class NewCoinDataset(Dataset):
 			timeseries = timeseries.view(timeseries_size, 1)
 		else:
 			timeseries = timeseries.unsqueeze(0)
-		#print(timeseries.shape)
+
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 		if self.cnn:
 			return {"input": timeseries, "label": coin_class}
