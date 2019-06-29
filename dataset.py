@@ -38,6 +38,7 @@ class NewCoinDataset(Dataset):
 
 		self.cnn = args.mode == "trainCNN"
 		self.window_size = args.window_size
+		self.use_windows = args.use_windows != None
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
@@ -135,7 +136,7 @@ class NewCoinDataset(Dataset):
 
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
-				if self.cnn:
+				if self.cnn or self.use_windows:
 					for i in range(timeseries.size - self.window_size):
 						window = timeseries[i:i+self.window_size]
 						self.preloaded_data.append((coin, self.generate_data(window, coin)))

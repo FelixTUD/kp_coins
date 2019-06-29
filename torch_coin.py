@@ -78,7 +78,7 @@ def train(model, dataloader, optimizer, save_fig=False, writer=None, train_autoe
 		loss_history[i_batch] = loss.item()
 
 		if writer:
-			writer.add_scalar("raw/loss/reconstruction", global_step=global_step_train, scalar_value=loss.item())
+			# writer.add_scalar("raw/loss/reconstruction", global_step=global_step_train, scalar_value=loss.item())
 
 			if save_fig:
 				fig = plt.figure(0)
@@ -111,9 +111,9 @@ def train(model, dataloader, optimizer, save_fig=False, writer=None, train_autoe
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
 
-		if writer:
-			writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
-			writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
+		# if writer:
+		# 	writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
+		# 	writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
 
 		if train_categorizer:
 			optimizer[1].zero_grad()
@@ -164,9 +164,9 @@ def trainCNN(model, dataloader, optimizer, save_fig=False, writer=None):
 		acc = calc_acc(input=predicted_category, target=output)
 		acc_history[i_batch] = acc
 
-		if writer:
-			writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
-			writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
+		# if writer:
+		# 	writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
+		# 	writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
 
 		optimizer.zero_grad()
 		loss.backward()
@@ -212,8 +212,8 @@ def evaluate(model, dataloader, start_of_sequence=-1, writer=None):
 			acc = calc_acc(input=predicted_category, target=output)
 			acc_history[i_batch] = acc
 
-			if writer:
-				writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
+			# if writer:
+			# 	writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
 
 			del loss # Necessary?
 
@@ -248,8 +248,8 @@ def evaluateCNN(model, dataloader, writer=None):
 			acc = calc_acc(input=predicted_category, target=output)
 			acc_history[i_batch] = acc
 
-			if writer:
-				writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
+			# if writer:
+			# 	writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
 
 			del loss # Necessary?
 
@@ -281,7 +281,7 @@ def get_comment_string(args):
 	if args.mode != "trainCNN":
 		comment += "hs{}_".format(args.hidden_size)
 		comment += "fc_hd{}_".format(args.fc_hidden_dim)
-	else:
+	if args.mode == "trainCNN" or args.use_windows:
 		comment += "ws{}_".format(args.window_size)
 	if args.mode != "trainCNN":
 		if args.use_lstm:
@@ -368,7 +368,7 @@ def main(args):
 		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 	else:
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
-		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 	
@@ -390,7 +390,7 @@ def main(args):
 			print("Moving model to gpu...")
 			model = model.cuda()
 
-		opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.001*3), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.001*3)]
+		opti = [optim.Adam(model.get_encoder_param() + model.get_decoder_param(), lr=0.0001), optim.Adam(model.get_encoder_param() + model.get_predictor_param(), lr=0.0001)]
 		# schedulers = [optim.lr_scheduler.MultiStepLR(opti[0], milestones=[50]), optim.lr_scheduler.MultiStepLR(opti[1], milestones=np.arange(args.epochs)[::30], gamma=0.5)]
 
 		num_epochs = args.epochs
@@ -724,7 +724,8 @@ if __name__ == "__main__":
 	parser.add_argument("--cudnn_deterministic", action="store_true", help="Sets CuDNN into deterministic mode. This might impact perfromance.")
 	parser.add_argument("--no_state_dict", action="store_true", help="If set, saves the whole model instead of just the weights.")
 	parser.add_argument("--run_cpu", action="store_true", help="If set, calculates on the CPU, even if GPU is available.") # not functional
-	parser.add_argument("-ws", "--window_size", type=int, default=1024, help="Window size for cnn training. Default 1024.")
+	parser.add_argument("-ws", "--window_size", type=int, default=1024, help="Window size for training. Used if --use_windows is specified. Default 1024.")
+	parser.add_argument("--use_windows", action="store_true", help="If set, training uses a sliding window with window size specified by -ws. Default off, if using cnn defaults to on.")
 
 	args = parser.parse_args()
 
