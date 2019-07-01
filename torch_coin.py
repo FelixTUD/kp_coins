@@ -17,6 +17,7 @@ import os
 import random
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
 from model import Autoencoder, VariationalAutoencoder, CNNCategorizer
@@ -498,7 +499,7 @@ def main(args):
 
 		plot_colors = []
 
-		fig = plt.figure()
+		fig = plt.figure(figsize=(16, 9), dpi=120)
 		ax = fig.add_subplot(111)#, projection="3d")
 
 		i = 0
@@ -521,14 +522,27 @@ def main(args):
 
 		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
 
-		# box = ax.get_position()
-		# ax.set_position([box.x0, box.y0 + box.height * 0.1,
-  #                		box.width, box.height * 0.9])
+		# Create custom legend
+		labels = ["1 ct", "2 ct", "5 ct", "20 ct", "50 ct", "1 €", "2 €"]
+		legend_items = []
+		for i, _ in enumerate(coins):
+			legend_items.append(Line2D([0], [0], marker='o', color="w", label=labels[i], markerfacecolor=colors[i], markersize=15))
+ 
+		box = ax.get_position()
+		ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                 		box.width, box.height * 0.9])
 
-		# ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
-  #         		  fancybox=True, shadow=True, ncol=5)
+		ax.legend(handles=legend_items, loc='upper center', bbox_to_anchor=(0.5, -0.05),
+          		  fancybox=True, shadow=True, ncol=len(coins))
 
-		plt.show()
+		if args.plot_title:
+			plt.title(args.plot_title)
+
+		if args.save_plot:
+			plt.savefig(args.save_plot, format="png")
+			plt.clf()
+		else:
+			plt.show()
 		
 
 	if args.mode == "confusion":
@@ -726,6 +740,9 @@ if __name__ == "__main__":
 	parser.add_argument("--run_cpu", action="store_true", help="If set, calculates on the CPU, even if GPU is available.") # not functional
 	parser.add_argument("-ws", "--window_size", type=int, default=1024, help="Window size for training. Used if --use_windows is specified. Default 1024.")
 	parser.add_argument("--use_windows", action="store_true", help="If set, training uses a sliding window with window size specified by -ws. Default off, if using cnn defaults to on.")
+	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
+	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")
+	
 
 	args = parser.parse_args()
 

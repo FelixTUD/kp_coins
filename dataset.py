@@ -38,7 +38,7 @@ class NewCoinDataset(Dataset):
 
 		self.cnn = args.mode == "trainCNN"
 		self.window_size = args.window_size
-		self.use_windows = args.use_windows != None
+		self.use_windows = args.use_windows
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
