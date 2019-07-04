@@ -30,6 +30,7 @@ class NewCoinDataset(Dataset):
 		self.rosa = rosa 		# Multiprocessing bullshit
 
 		self.cnn = args.mode == "trainCNN"
+		self.use_windows = args.use_windows
 
 		self.shrink = args.shrink
 		assert(self.shrink > 0)
@@ -46,8 +47,7 @@ class NewCoinDataset(Dataset):
 		
 		self.window_size = args.window_size
 		assert(self.window_size > 0)
-
-		self.use_windows = args.use_windows
+		
 		self.window_gap = args.window_gap
 		assert(self.window_gap > 0)
 		self.total_windows = 0
@@ -161,7 +161,7 @@ class NewCoinDataset(Dataset):
 
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
-				print("\n{}".format(timeseries.shape))
+				# print("\n{}".format(timeseries.shape))
 				if self.cnn or self.use_windows:
 					if timeseries.size == self.window_size:
 						self.preloaded_data[global_index].append((coin, self.generate_data(timeseries, coin)))
