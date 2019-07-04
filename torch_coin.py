@@ -739,6 +739,7 @@ if __name__ == "__main__":
 	parser.add_argument("--no_state_dict", action="store_true", help="If set, saves the whole model instead of just the weights.")
 	parser.add_argument("--run_cpu", action="store_true", help="If set, calculates on the CPU, even if GPU is available.") # not functional
 	parser.add_argument("-ws", "--window_size", type=int, default=1024, help="Window size for training. Used if --use_windows is specified. Default 1024.")
+	parser.add_argument("-wg", "--window_gap", type=int, default=1024, help="Gap between two consecutive windows. Default 1024.")
 	parser.add_argument("--use_windows", action="store_true", help="If set, training uses a sliding window with window size specified by -ws. Default off, if using cnn defaults to on.")
 	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
 	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")

@@ -29,20 +29,33 @@ class NewCoinDataset(Dataset):
 		import librosa as rosa 
 		self.rosa = rosa 		# Multiprocessing bullshit
 
+		self.cnn = args.mode == "trainCNN"
+
 		self.shrink = args.shrink
+		assert(self.shrink > 0)
+
 		self.top_db = args.top_db
 		self.path_to_hdf5 = args.path
 		self.use_cuda = torch.cuda.is_available()
-		self.preloaded_data = []
+		if self.cnn or self.use_windows:
+			self.preloaded_data = defaultdict(list)
+		else:
+			self.preloaded_data = []
 		self.coin_mapping = defaultdict(list)
 
-		self.cnn = args.mode == "trainCNN"
+		
 		self.window_size = args.window_size
+		assert(self.window_size > 0)
+
 		self.use_windows = args.use_windows
+		self.window_gap = args.window_gap
+		assert(self.window_gap > 0)
+		self.total_windows = 0
 
 		self.data_file = h5py.File(self.path_to_hdf5, "r")
 
 		if args.coins:
+			assert(len(args.coins) > 0)
 			self.coins = list(map(str, args.coins))
 		else:
 			self.coins = list(self.data_file.keys())
@@ -66,15 +79,26 @@ class NewCoinDataset(Dataset):
 
 		print("Preloading data to {} memory ...".format("gpu" if self.use_cuda else "cpu"))
 		self.preload_samples()
+		if self.use_windows:
+			print("Loaded {} windows".format(self.total_windows))
 
 		print("Shuffeling preloaded data ...")
-		random.shuffle(self.preloaded_data)
+		if self.cnn or self.use_windows:
+			for key, value in self.preloaded_data.items():
+				random.shuffle(value)
+				self.preloaded_data[key] = value
+		else:
+			random.shuffle(self.preloaded_data)
 
 		self.generate_coin_mapping_index()
 
 	def generate_coin_mapping_index(self):
-		for index, loaded_data in enumerate(self.preloaded_data):
-			self.coin_mapping[loaded_data[0]].append(index)
+		if self.cnn or self.use_windows:
+			# To implement
+			pass
+		else:
+			for index, loaded_data in enumerate(self.preloaded_data):
+				self.coin_mapping[loaded_data[0]].append(index)
 
 	def get_num_coins_per_class(self):
 		return self.min_num_coins
@@ -88,7 +112,7 @@ class NewCoinDataset(Dataset):
 	def preprocess_time_series(self, timeseries):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
 
-		if self.cnn:
+		if self.use_windows or self.cnn:
 			if timeseries.size < self.window_size:
 				timeseries = self.rosa.util.fix_length(timeseries, self.window_size)
 
@@ -130,16 +154,25 @@ class NewCoinDataset(Dataset):
 			return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
 
 	def preload_samples(self):
+		global_index = 0
 		for coin, samples in self.sample_space.items():
 			for index, (gain, example) in enumerate(samples):
 				print("\rPreloading coin {}: {}/{}".format(coin, index + 1, len(samples)), end="")
 
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
+				print("\n{}".format(timeseries.shape))
 				if self.cnn or self.use_windows:
-					for i in range(timeseries.size - self.window_size):
-						window = timeseries[i:i+self.window_size]
-						self.preloaded_data.append((coin, self.generate_data(window, coin)))
+					if timeseries.size == self.window_size:
+						self.preloaded_data[global_index].append((coin, self.generate_data(timeseries, coin)))
+						self.total_windows += 1
+						global_index += 1
+					else:
+						for i in range(0, timeseries.size - self.window_size, self.window_gap):
+							window = timeseries[i:i+self.window_size]
+							self.preloaded_data[global_index].append((coin, self.generate_data(window, coin)))
+							self.total_windows += 1
+						global_index += 1
 				else:
 					self.preloaded_data.append((coin, self.generate_data(timeseries, coin)))
 
@@ -176,7 +209,10 @@ class NewCoinDataset(Dataset):
 		return len(self.preloaded_data)
 		
 	def __getitem__(self, idx):
-		return self.preloaded_data[idx][1]
+		if self.cnn or self.use_windows:
+			return random.choice(self.preloaded_data[idx])[1]
+		else:
+			return self.preloaded_data[idx][1]
 
 	def get_data_for_coin_type(self, coin, num_examples):
 		result = []
