@@ -137,7 +137,7 @@ class NewCoinDataset(Dataset):
 				timeseries = self.data_file[coin][gain][example]["values"][:]
 				timeseries = self.preprocess_time_series(timeseries)
 				if self.cnn or self.use_windows:
-					for i in range(timeseries.size - self.window_size):
+					for i in range(0, timeseries.size - self.window_size, self.window_size):
 						window = timeseries[i:i+self.window_size]
 						self.preloaded_data.append((coin, self.generate_data(window, coin)))
 				else:
