@@ -15,8 +15,8 @@ class Enc_Dec_Session(CoinSession):
 							 test_dataloader=None,
 							 value_summarize_fn=summarize_values):
 		super(Enc_Dec_Session, self).__init__(args, training_dataloader, 
-													validation_dataloader=None, 
-													test_dataloader=None,
+													validation_dataloader=validation_dataloader, 
+													test_dataloader=test_dataloader,
 							 						value_summarize_fn=value_summarize_fn)
 
 		self.model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=num_loaded_coins, args=args)
@@ -27,6 +27,8 @@ class Enc_Dec_Session(CoinSession):
 						   optim.Adam(self.model.get_encoder_param() + self.model.get_predictor_param(), lr=0.0001)]
 
 		if torch.cuda.is_available():
+			print("Moving model to gpu...")
+			self.model.cuda()
 			self.epsilon = torch.tensor(1e-7).cuda()
 		else:
 			self.epsilon = torch.tensor(1e-7)
@@ -57,14 +59,17 @@ class Enc_Dec_Session(CoinSession):
 
 		return comment
 
+	def on_train_loop_start(self, current_epoch):
+		self.model.train()
+		print("-------------")
+		print("Current epoch: {}".format(current_epoch + 1))
+
 	def train_inner(self, **kwargs):
 		batch_num = kwargs["batch_num"]
 		batch_content = kwargs["batch_content"]
 		existing_results = kwargs["existing_results"]
 
-		self.model.train()
-
-		print("{}/{}".format(batch_num + 1, self.num_total_train_steps_per_epoch), end="\r")
+		print("Training batch: {}/{}".format(batch_num + 1, self.num_total_train_steps_per_epoch), end="\r")
 
 		input_tensor, reversed_input, teacher_input, output = batch_content["input"], batch_content["reversed_input"], batch_content["teacher_input"], batch_content["label"]
 		model_output = self.model(input=input_tensor, teacher_input=teacher_input)
@@ -91,5 +96,28 @@ class Enc_Dec_Session(CoinSession):
 
 		del loss # Necessary?
 
-	def on_train_loop_finished(self):
+	def on_evaluate_loop_start(self, current_epoch):
+		self.model.eval()
+
+	def evaluate_inner(self, **kwargs):
+		batch_num = kwargs["batch_num"]
+		batch_content = kwargs["batch_content"]
+		existing_results = kwargs["existing_results"]
+
+		print("Evaluating batch: {}/{}".format(batch_num + 1, self.num_total_validation_steps_per_epoch), end="\r")
+
+		input_tensor, output = batch_content["input"], batch_content["label"]
+	
+		predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
+		loss = self.categorization_loss(input=predicted_category+self.epsilon, target=output)
+	
+		existing_results["val/categorization_loss"] = loss.item()
+		acc = categorization_acc(input=predicted_category, target=output)
+		existing_results["val/categorization_acc"] = acc
+
+	def on_evaluate_loop_finished(self, current_epoch):
+		print("")
+		print("Evaluation results:")
+
+	def on_train_loop_finished(self, current_epoch):
 		print("")

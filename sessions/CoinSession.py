@@ -29,10 +29,13 @@ class CoinSession(Session):
 		else:
 			self.test_dataloader = None
 
-		self.existing_results = defaultdict(list)
+		self.create_new_exisiting_results()
 		self.value_summarize_fn = value_summarize_fn
 
 		self.writer = SummaryWriter(comment=self.comment_string())
+
+	def create_new_exisiting_results(self):
+		self.existing_results = defaultdict(list)
 
 	def comment_string(self):
 		# Default comment. Should be overwritten by each child class.
@@ -45,9 +48,8 @@ class CoinSession(Session):
 		return self.fill_comments_with_args(comment)
 
 	def log(self, result, current_epoch):
-		print("Current epoch: {}".format(current_epoch + 1))
 		for key, value in result.items():
-			print("{}: {:.5f}".format(key, value))
+			print("{}: {:.4f}".format(key, value))
 			self.writer.add_scalar(key, global_step=current_epoch, scalar_value=value)
 
 	def _assert_type(self, check, type):
@@ -62,19 +64,39 @@ class CoinSession(Session):
 	def test_inner(self, **kwargs):
 		print("Warning: test() called, but test_inner() not implemented.")
 
+	def on_train_loop_start(self):
+		pass
+
 	def on_train_loop_finished(self):
 		pass
-
-	def on_train_loo_start(self):
+	
+	def on_evaluate_loop_start(self):
 		pass
 
-	def train(self):
-		self.on_train_loo_start()
+	def on_evaluate_loop_finished(self):
+		pass
+
+	def train(self, current_epoch):
+		self.create_new_exisiting_results()
+
+		self.on_train_loop_start(current_epoch)
 
 		for batch_num, batch_content in enumerate(self.training_dataloader):
 			self.train_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results) 
 
-		self.on_train_loop_finished()
+		self.on_train_loop_finished(current_epoch)
+
+		return self.summarize_results()
+
+	def evaluate(self, current_epoch):
+		self.create_new_exisiting_results()
+
+		self.on_evaluate_loop_start(current_epoch)
+
+		for batch_num, batch_content in enumerate(self.validation_dataloader):
+			self.evaluate_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results) 
+
+		self.on_evaluate_loop_finished(current_epoch)
 
 		return self.summarize_results()
 

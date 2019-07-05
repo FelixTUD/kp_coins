@@ -5,18 +5,18 @@ class Session(object):
 		self.args = args
 
 	def startup(self):
-		print("Warning: startup() called, but startup() not implemented.")
+		pass
 
 	def cleanup(self):
-		print("Warning: cleanup() called, but cleanup() not implemented.")
+		pass
 
-	def train(self):
+	def train(self, current_epoch):
 		raise NotImplementedError()
 
 	def test(self):
 		print("Warning: test() called, but test() not implemented.")
 
-	def evaluate(self):
+	def evaluate(self, current_epoch):
 		print("Warning: evaluate() called, but evalute() not implemented.")
 
 	def log(self, result, current_epoch=None):
@@ -26,15 +26,18 @@ class Session(object):
 		self.startup()
 
 		for current_epoch in range(self.epochs):
-			train_result = self.train()
-			self.log(train_result, current_epoch)
+			train_result = self.train(current_epoch)
+			if train_result:
+				self.log(train_result, current_epoch)
 
 			if evaluate:
-				evaluate_result = self.evaluate()
-				self.log(evaluate_result, current_epoch)
+				evaluate_result = self.evaluate(current_epoch)
+				if evaluate_result:
+					self.log(evaluate_result, current_epoch)
 
 		if test:
 			test_result = self.test()
-			self.log(test_result)		
+			if test_result:
+				self.log(test_result)		
 
 		self.cleanup()
