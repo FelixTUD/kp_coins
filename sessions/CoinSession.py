@@ -32,7 +32,7 @@ class CoinSession(Session):
 		self.create_new_exisiting_results()
 		self.value_summarize_fn = value_summarize_fn
 
-		self.writer = SummaryWriter(comment=self.comment_string())
+		self.writer = SummaryWriter(comment=self.comment_string(), flush_secs=30)
 
 	def create_new_exisiting_results(self):
 		self.existing_results = defaultdict(list)

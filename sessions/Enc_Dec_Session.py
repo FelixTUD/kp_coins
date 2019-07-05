@@ -23,8 +23,8 @@ class Enc_Dec_Session(CoinSession):
 
 		self.reconstruction_loss = custom_mse_loss
 		self.categorization_loss = CrossEntropyLoss()
-		self.optimizers = [optim.Adam(self.model.get_encoder_param() + self.model.get_decoder_param(), lr=0.0001), 
-						   optim.Adam(self.model.get_encoder_param() + self.model.get_predictor_param(), lr=0.0001)]
+		self.optimizers = [optim.Adam(self.model.get_encoder_param() + self.model.get_decoder_param(), lr=self.args.learning_rate), 
+						   optim.Adam(self.model.get_encoder_param() + self.model.get_predictor_param(), lr=self.args.learning_rate)]
 
 		if torch.cuda.is_available():
 			print("Moving model to gpu...")
@@ -44,6 +44,7 @@ class Enc_Dec_Session(CoinSession):
 	def comment_string(self):
 		comment = "non_gen_"
 		comment += "b{batch_size}_"
+		comment += "lr{learning_rate}_"
 		comment += "db{top_db}_"
 		if self.args.use_windows:
 			comment += "ws{window_size}_"
