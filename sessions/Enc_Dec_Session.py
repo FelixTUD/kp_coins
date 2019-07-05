@@ -86,9 +86,9 @@ class Enc_Dec_Session(CoinSession):
 		predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
 		loss = self.categorization_loss(input=predicted_category+self.epsilon, target=output)
 	
-		existing_results["train/categorization_loss"] = loss.item()
+		existing_results["train/categorization_loss"].append(loss.item())
 		acc = categorization_acc(input=predicted_category, target=output)
-		existing_results["train/categorization_acc"] = acc
+		existing_results["train/categorization_acc"].append(acc)
 
 		self.optimizers[1].zero_grad()
 		loss.backward()
@@ -111,9 +111,9 @@ class Enc_Dec_Session(CoinSession):
 		predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
 		loss = self.categorization_loss(input=predicted_category+self.epsilon, target=output)
 	
-		existing_results["val/categorization_loss"] = loss.item()
+		existing_results["val/categorization_loss"].append(loss.item())
 		acc = categorization_acc(input=predicted_category, target=output)
-		existing_results["val/categorization_acc"] = acc
+		existing_results["val/categorization_acc"].append(acc)
 
 	def on_evaluate_loop_finished(self, current_epoch):
 		print("")
