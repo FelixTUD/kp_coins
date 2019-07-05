@@ -34,6 +34,9 @@ class CoinSession(Session):
 
 		self.writer = SummaryWriter(comment=self.comment_string(), flush_secs=30)
 
+	def __del__(self):
+		self.writer.close()
+
 	def create_new_exisiting_results(self):
 		self.existing_results = defaultdict(list)
 

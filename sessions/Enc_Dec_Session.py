@@ -48,6 +48,7 @@ class Enc_Dec_Session(CoinSession):
 		comment += "db{top_db}_"
 		if self.args.use_windows:
 			comment += "ws{window_size}_"
+			comment += "wg{window_gap}_"
 		if self.args.use_lstm:
 			comment += "lstm_"
 		else:
