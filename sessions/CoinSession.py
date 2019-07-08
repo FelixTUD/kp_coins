@@ -1,7 +1,9 @@
+import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from collections import defaultdict
+import os
 
 from utils.Session import Session
 
@@ -33,6 +35,10 @@ class CoinSession(Session):
 		self.value_summarize_fn = value_summarize_fn
 
 		self.writer = SummaryWriter(comment=self.comment_string(), flush_secs=30)
+		
+		model_save_dir_name = self.writer.log_dir.split("/")[-1]
+		self.model_save_path = os.path.join(self.args.save, model_save_dir_name)
+		os.makedirs(self.model_save_path, exist_ok=True)
 
 	def __del__(self):
 		self.writer.close()
@@ -78,6 +84,13 @@ class CoinSession(Session):
 
 	def on_evaluate_loop_finished(self):
 		pass
+
+	def on_epoch_finished(self, current_epoch):
+		if self.args.save:
+			if self.args.no_state_dict:
+				torch.save(self.model, os.path.join(self.model_save_path, "{:04d}.model".format(current_epoch + 1)))
+			else:
+				torch.save(self.model.state_dict(), os.path.join(self.model_save_path, "{:04d}.weights".format(current_epoch + 1)))
 
 	def train(self, current_epoch):
 		self.create_new_exisiting_results()

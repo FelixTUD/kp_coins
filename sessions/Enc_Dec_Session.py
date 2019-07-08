@@ -42,17 +42,17 @@ class Enc_Dec_Session(CoinSession):
 			self.num_total_test_steps_per_epoch = len(test_dataloader) 
 
 	def comment_string(self):
-		comment = "non_gen_"
+		comment = "enc_dec_"
+		if self.args.use_lstm:
+			comment += "lstm_"
+		else:
+			comment += "gru_"
 		comment += "b{batch_size}_"
 		comment += "lr{learning_rate}_"
 		comment += "db{top_db}_"
 		if self.args.use_windows:
 			comment += "ws{window_size}_"
 			comment += "wg{window_gap}_"
-		if self.args.use_lstm:
-			comment += "lstm_"
-		else:
-			comment += "gru_"
 		comment += "s{shrink}_"
 		comment += "e{epochs}_"
 		comment += "c{coins}_"
