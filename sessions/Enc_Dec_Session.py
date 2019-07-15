@@ -33,13 +33,13 @@ class Enc_Dec_Session(CoinSession):
 		else:
 			self.epsilon = torch.tensor(1e-7)
 
-		self.num_total_train_steps_per_epoch = len(training_dataloader) 
+		self.num_total_train_steps_per_epoch = len(self.training_dataloader) 
 
 		if self.validation_dataloader:
-			self.num_total_validation_steps_per_epoch = len(validation_dataloader) 
+			self.num_total_validation_steps_per_epoch = len(self.validation_dataloader) 
 
 		if self.test_dataloader:
-			self.num_total_test_steps_per_epoch = len(test_dataloader) 
+			self.num_total_test_steps_per_epoch = len(self.test_dataloader) 
 
 	def comment_string(self):
 		comment = "non_gen_"
