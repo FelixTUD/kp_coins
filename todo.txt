@@ -1,14 +1,18 @@
+HIGH:
+- Automatische Erstellung aller Metriken nach Angabe von: Architektur, Weight File, Seed
+- Dokumentieren aller bisherigen Probleme 
+
+LOW:
 - Input preprocessing
 	- Fourier transformation --> Peaks anschauen
 	- nach preprocessing nochmal fourier transformierung und schauen ob peaks noch da sind
 
-- Nicht alle n Werte nehmen, sondern Abschnitte
 - Varational Autoencoder implementieren und testen
 - Fake Inputs testen
-- Dokumentieren aller bisherigen Probleme 
 
 == DONE ==
 
+- Nicht alle n Werte nehmen, sondern Abschnitte
 - In Categorizer Training den Encoder nicht mit trainieren (Validieren ob unerwartete Accuracy drops verschwinden)
 - TSNE mit aktuellem Netz
 - Trainieren mit fc zu Coin-Klasse, abwechselnd 
