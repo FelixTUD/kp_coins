@@ -22,10 +22,18 @@ class Session(object):
 	def log(self, result, current_epoch=None):
 		print("Warning: log called, but log() not implemented.")
 
+	def on_epoch_start(self, current_epoch):
+		pass
+
+	def on_epoch_finished(self, current_epoch):
+		pass
+
 	def run(self, evaluate=True, test=True):
 		self.startup()
 
 		for current_epoch in range(self.epochs):
+			self.on_epoch_start(current_epoch)
+
 			train_result = self.train(current_epoch)
 			if train_result:
 				self.log(train_result, current_epoch)
@@ -34,6 +42,8 @@ class Session(object):
 				evaluate_result = self.evaluate(current_epoch)
 				if evaluate_result:
 					self.log(evaluate_result, current_epoch)
+
+			self.on_epoch_finished(current_epoch)
 
 		if test:
 			test_result = self.test()

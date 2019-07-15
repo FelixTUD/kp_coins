@@ -525,8 +525,6 @@ def main(args):
 		plt.savefig("val_pred_plot.pdf", format="pdf")
 		plt.show()
 
-	writer.close()
-
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
