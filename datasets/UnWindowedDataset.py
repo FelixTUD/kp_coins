@@ -34,6 +34,7 @@ class UnWindowedDataset(Dataset):
 		self.shrink = args.shrink
 		assert(self.shrink > 0)
 
+		self.architecture = args.architecture
 		self.top_db = args.top_db
 		self.path_to_hdf5 = args.path
 		self.use_cuda = torch.cuda.is_available()
@@ -111,11 +112,14 @@ class UnWindowedDataset(Dataset):
 		teacher_input[1:] = reversed_timeseries[1:]
 		teacher_input[0] = -1
 
-		reversed_timeseries = self.convert_to_tensor(reversed_timeseries).view(reversed_timeseries.size, 1)
-		teacher_input = self.convert_to_tensor(teacher_input).view(teacher_input.size, 1)
-		timeseries_size = timeseries.size
+		reversed_timeseries = self.convert_to_tensor(reversed_timeseries)
+		teacher_input = self.convert_to_tensor(teacher_input)
 		timeseries = self.convert_to_tensor(timeseries)
-		timeseries = timeseries.view(timeseries_size, 1)
+
+		if self.architecture in ["enc_dec", "simple_rnn"]:
+			reversed_timeseries = reversed_timeseries.unsqueeze(1)
+			teacher_input = teacher_input.unsqueeze(1)
+			timeseries = timeseries.unsqueeze(1)
 
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}

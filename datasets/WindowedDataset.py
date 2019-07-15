@@ -20,6 +20,7 @@ class WindowedDataset(Dataset):
 		self.shrink = args.shrink
 		assert(self.shrink > 0)
 
+		self.architecture = args.architecture
 		self.top_db = args.top_db
 		self.path_to_hdf5 = args.path
 		self.use_cuda = torch.cuda.is_available()
@@ -112,6 +113,11 @@ class WindowedDataset(Dataset):
 		reversed_timeseries = self.convert_to_tensor(reversed_timeseries)
 		teacher_input = self.convert_to_tensor(teacher_input)
 		timeseries = self.convert_to_tensor(timeseries)
+
+		if self.architecture in ["enc_dec", "simple_rnn"]:
+			reversed_timeseries = reversed_timeseries.unsqueeze(1)
+			teacher_input = teacher_input.unsqueeze(1)
+			timeseries = timeseries.unsqueeze(1)
 
 		coin_class = self.convert_to_tensor(self.convert_to_one_hot_index(coin)).long()
 		return {"input": timeseries, "reversed_input": reversed_timeseries, "teacher_input": teacher_input ,"label": coin_class}
