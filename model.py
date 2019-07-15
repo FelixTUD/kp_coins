@@ -191,6 +191,33 @@ class VariationalAutoencoder(nn.Module):
 		for param in self.decoder.parameters():
 			param.requires_grad = True
 
+class SimpleRNN(nn.Module):
+	def __init__(self, hidden_dim, feature_dim, num_coins, args):
+		super(SimpleRNN, self).__init__()
+
+		self.use_lstm = args.use_lstm
+		self.hidden_dim = hidden_dim
+
+		if self.use_lstm:
+			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
+		else:
+			self.encoder = EncoderGRU(hidden_dim, feature_dim)
+
+		self.predictor = Predictor(input_dim=hidden_dim, hidden_dim=args.fc_hidden_dim, output_dim=num_coins)
+
+	def forward(self, input, return_hidden=False):
+		_, last_hidden = self.encoder(input)
+		if return_hidden:
+			if self.use_lstm:
+				result = torch.empty(2, self.hidden_dim)
+
+				result[0] = last_hidden[0].cpu()
+				result[1] = last_hidden[1].cpu()
+				return result
+			else:
+				return last_hidden.cpu()
+
+		return self.predictor(last_hidden[0][0])
 
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):

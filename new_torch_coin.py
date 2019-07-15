@@ -5,7 +5,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 from torch.utils.tensorboard import SummaryWriter
-from torch.nn.utils.rnn import pad_packed_sequence
 
 import numpy as np
 import multiprocessing
@@ -19,149 +18,12 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
-from model import Autoencoder, VariationalAutoencoder, CNNCategorizer
 from sessions.Enc_Dec_Session import Enc_Dec_Session
+from sessions.CNN_Session import CNN_Session
+from sessions.Simple_RNN_Session import Simple_RNN_Session
 
-def custom_mse_loss(y_pred, y_true):
-	return ((y_true-y_pred)**2).sum(1).mean()
-
-def calc_acc(input, target):
-	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
-
-def kl_loss(mu, logvar):
-	return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
-def calculate_loss_non_generative(model_output, target):
-	return custom_mse_loss(model_output, target)
-
-def calculate_loss_generative(model_output, target):
-	predicted_sequence, mu, logvar = model_output
-	kl_divergence = kl_loss(mu, logvar)
-	mse_loss = custom_mse_loss(predicted_sequence, target)
-	return kl_divergence + mse_loss
-
-global_step_train = 0
-global_step_valid = 0
-global_fig_count = 0
-
-def trainCNN(model, dataloader, optimizer, save_fig=False, writer=None):
-	global global_step_train
-	global global_fig_count
-	model.train()
-	num_steps = len(dataloader)
-
-	loss_history_cel = np.empty(num_steps)
-	acc_history = np.empty(num_steps)
-	loss_cel = nn.CrossEntropyLoss()
-
-	epsilon = None
-	if torch.cuda.is_available():
-		epsilon = torch.tensor(1e-7).cuda()
-	else:
-		epsilon = torch.tensor(1e-7)
-
-	for i_batch, sample_batched in enumerate(dataloader):
-		print("{}/{}".format(i_batch + 1, num_steps), end="\r")
-
-		input_tensor, output = sample_batched["input"], sample_batched["label"]
-		#print(input_tensor.shape)
-		predicted_category = model(input=input_tensor)
-		#print(predicted_category.shape)
-		predicted_category = predicted_category.squeeze(1)
-		loss = loss_cel(input=predicted_category+epsilon, target=output)
-
-		loss_history_cel[i_batch] = loss.item()
-		acc = calc_acc(input=predicted_category, target=output)
-		acc_history[i_batch] = acc
-
-		# if writer:
-		# 	writer.add_scalar("raw/loss/categorization", global_step=global_step_train, scalar_value=loss.item())
-		# 	writer.add_scalar("raw/acc/categorization", global_step=global_step_train, scalar_value=acc)
-
-		optimizer.zero_grad()
-		loss.backward()
-		optimizer.step()
-
-		del loss # Necessary?
-
-		global_step_train += 1
-
-	if writer:
-		writer.add_scalar("per_epoch/loss/categorization", global_step=global_step_train // num_steps, scalar_value=loss_history_cel.mean())
-		writer.add_scalar("per_epoch/loss/reconstruction", global_step=global_step_train // num_steps, scalar_value=0)
-		writer.add_scalar("per_epoch/acc/categorization", global_step=global_step_train // num_steps, scalar_value=acc_history.mean())
-			
-	return {"loss_reconstruction": 0, "loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
-
-def evaluateCNN(model, dataloader, writer=None):
-	global global_step_valid
-	model.eval()
-	
-	num_steps = len(dataloader)
-
-	loss_history_cel = np.empty(num_steps)
-	acc_history = np.empty(num_steps)
-	loss_cel = nn.CrossEntropyLoss()
-
-	with torch.no_grad():
-		for i_batch, sample_batched in enumerate(dataloader):
-			print("{}/{}".format(i_batch + 1, num_steps), end="\r")
-			input_tensor, output = sample_batched["input"], sample_batched["label"]
-
-			predicted_category = model(input=input_tensor)
-			predicted_category = predicted_category.squeeze(1)
-			loss = loss_cel(input=predicted_category, target=output)
-
-			loss_history_cel[i_batch] = loss.item()
-			acc = calc_acc(input=predicted_category, target=output)
-			acc_history[i_batch] = acc
-
-			# if writer:
-			# 	writer.add_scalar("val_raw/acc/categorization", global_step=global_step_valid, scalar_value=acc)
-
-			del loss # Necessary?
-
-			global_step_valid += 1
-
-		if writer:
-			writer.add_scalar("val_per_epoch/loss/categorization", global_step=global_step_valid // num_steps, scalar_value=loss_history_cel.mean())
-			writer.add_scalar("val_per_epoch/acc/categorization", global_step=global_step_valid // num_steps, scalar_value=acc_history.mean())
-
-	return {"loss_categorization": loss_history_cel.mean(), "accuracy_categorization": acc_history.mean()}
-
-def get_dict_string(d, prefix=""):
-	result = prefix
-	for k, v in d.items():
-		result += " {}: {:.4f},".format(k, v)
-
-	return result[:-1]
-
-def get_comment_string(args):
-	comment = ""
-	if args.use_variational_autoencoder:
-		comment += "gen_"
-	elif args.mode == "trainCNN":
-		comment += "cnn_"
-	else:
-		comment += "non_gen_"
-	comment += "b{}_".format(args.batch_size)
-	comment += "db{}_".format(args.top_db)
-	if args.mode != "trainCNN":
-		comment += "hs{}_".format(args.hidden_size)
-		comment += "fc_hd{}_".format(args.fc_hidden_dim)
-	if args.mode == "trainCNN" or args.use_windows:
-		comment += "ws{}_".format(args.window_size)
-	if args.mode != "trainCNN":
-		if args.use_lstm:
-			comment += "lstm_"
-		else:
-			comment += "gru_"
-	comment += "s{}_".format(args.shrink)
-	comment += "e{}_".format(args.epochs)
-	comment += "c{}_".format(args.coins)
-	comment += "seed{}".format(args.seed)
-	return comment
+from datasets.WindowedDataset import WindowedDataset
+from datasets.UnWindowedDataset import UnWindowedDataset, Collator
 
 def plot_confusion_matrix(cm, classes,
                           title=None,
@@ -207,86 +69,56 @@ def main(args):
 		torch.backends.cudnn.deterministic = True
 		torch.backends.cudnn.benchmark = False
 
-	print("Worker thread count: {}".format(max(0, args.cpu_count)))
-
+	print("Number of additional worker threads: {}".format(max(0, args.cpu_count)))
 	torch.set_num_threads(max(0, args.cpu_count))
+
 	cuda_available = torch.cuda.is_available() and not args.run_cpu
 
-	complete_dataset = NewCoinDataset(args)
+	complete_dataset = None
+	if args.architecture == "cnn" or args.use_windows:
+		complete_dataset = WindowedDataset(args)
+	else:
+		complete_dataset = UnWindowedDataset(args)
+
 	num_examples = len(complete_dataset)
 	validation_dataset_size = int(args.val_split * num_examples)
-
 	training_dataset, validation_dataset = torch.utils.data.random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
 	
 	print("Training dataset length: {}".format(len(training_dataset)))
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
-	if args.mode == "trainCNN":
-		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+	if args.architecture == "cnn":
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 	else:
-		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True, collate_fn=Collator())	
+		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=Collator())	
 		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, collate_fn=Collator())
 
 	# test_dataloader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, num_workers=0, drop_last=(test_batch_size > 1))
 	
-	num_epochs_no_improvements = 0
-	best_val_loss = np.inf
-	no_improvements_patience = 5
-	no_improvements_min_epochs = 10
-
 	if args.mode == "train":
 
-		session = Enc_Dec_Session(args=args, 
+		session = None
+		if args.architecture == "enc_dec":
+			session = Enc_Dec_Session(args=args, 
+									  training_dataloader=training_dataloader, 
+									  validation_dataloader=validation_dataloader,
+									  num_loaded_coins=complete_dataset.get_num_loaded_coins())
+
+		elif args.architecture == "cnn":
+			session = CNN_Session(args=args, 
 								  training_dataloader=training_dataloader, 
 								  validation_dataloader=validation_dataloader,
 								  num_loaded_coins=complete_dataset.get_num_loaded_coins())
 
+		elif args.architecture == "simple_rnn":
+			session = Simple_RNN_Session(args=args, 
+								  		 training_dataloader=training_dataloader, 
+								  		 validation_dataloader=validation_dataloader,
+								  		 num_loaded_coins=complete_dataset.get_num_loaded_coins())
+
 		session.run(evaluate=True, test=False)
-
-	if args.mode == "trainCNN":
-		model = None
-		model = CNNCategorizer(feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-		print("Using: {}".format(type(model).__name__))
-
-		if cuda_available:
-			print("Moving model to gpu...")
-			model = model.cuda()
-
-		opti = optim.Adam(model.parameters(), lr=0.0001)
-
-		num_epochs = args.epochs
-
-		print(model)
-		print("Num parameters: {}".format(model.num_parameters()))
-
-		for current_epoch in range(num_epochs):
-
-			start_time = time.time()
-			train_history = trainCNN(model=model, dataloader=training_dataloader, optimizer=opti, save_fig=args.save_figures, writer=writer)
-			end_time = time.time()
-
-			print("Elapsed training time: {:.2f} seconds".format(end_time - start_time))
-			
-			start_time = time.time()
-			validation_history = evaluateCNN(model=model, dataloader=validation_dataloader, writer=writer)
-			end_time = time.time()
-
-			print("Elapsed validation time: {:.2f} seconds".format(end_time - start_time))
-
-			print("Epoch {}/{}:".format(current_epoch + 1, num_epochs))
-			print(get_dict_string(train_history, "train: "))
-			print(get_dict_string(validation_history, "val: "))
-			print("---")
-
-			if args.save:
-				if args.no_state_dict:
-					torch.save(model, os.path.join(model_save_path, "{:04d}.model".format(current_epoch + 1)))
-				else:
-					torch.save(model.state_dict(), os.path.join(model_save_path, "{:04d}.weights".format(current_epoch + 1)))
-
 
 	if args.mode == "tsne":
 		from sklearn.manifold import TSNE
@@ -536,17 +368,19 @@ if __name__ == "__main__":
 
 	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
 	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne', 'confusion' or 'infer'. Default 'train'")
+	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
+
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
-	parser.add_argument("-b", "--batch_size", type=int, default=128, help="Batch size. Default 1")
+	parser.add_argument("-b", "--batch_size", type=int, default=96, help="Batch size. Default 96")
 	parser.add_argument("-lstm", "--use_lstm", type=bool, default=True, help="Use lstm or gru. Default True = use lstm")
 	parser.add_argument("--val_split", type=float, default=0.1, help="Validation split. Default is 0.1")
-	parser.add_argument("-s", "--shrink", type=int, default=16, help="Shrinking factor. Selects data every s steps from input.")
-	parser.add_argument("-hs", "--hidden_size", type=int, default=64, help="Size of LSTM/GRU hidden layer.")
+	parser.add_argument("-s", "--shrink", type=int, default=16, help="Shrinking factor. Selects data every s steps from input. Default: 16")
+	parser.add_argument("-hs", "--hidden_size", type=int, default=64, help="Size of LSTM/GRU hidden layer. Default: 64")
 	parser.add_argument("-fc_hd", "--fc_hidden_dim", type=int, default=100, help="Hidden dimension size of predictor fully connected layer. Default 100")
 	parser.add_argument("-e", "--epochs", type=int, default=100, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
-	parser.add_argument("--top_db", type=int, default=5, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end.")
+	parser.add_argument("--top_db", type=int, default=2, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end. Default: 2")
 	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
 	parser.add_argument("--save_figures", action="store_true", help="Save figures of reconstructed time series.")
