@@ -34,11 +34,12 @@ class CoinSession(Session):
 		self.create_new_exisiting_results()
 		self.value_summarize_fn = value_summarize_fn
 
-		self.writer = SummaryWriter(comment=self.comment_string(), flush_secs=30)
+		self.writer = SummaryWriter(comment=self.args.extra_name + self.comment_string(), flush_secs=30)
 		
-		model_save_dir_name = self.writer.log_dir.split("/")[-1]
-		self.model_save_path = os.path.join(self.args.save, model_save_dir_name)
-		os.makedirs(self.model_save_path, exist_ok=True)
+		if self.args.save:
+			model_save_dir_name = self.writer.log_dir.split("/")[-1]
+			self.model_save_path = os.path.join(self.args.save, model_save_dir_name)
+			os.makedirs(self.model_save_path, exist_ok=True)
 
 	def __del__(self):
 		self.writer.close()

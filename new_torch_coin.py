@@ -23,24 +23,6 @@ from dataset import CoinDatasetLoader, CoinDataset, NewCoinDataset, Collator
 from model import Autoencoder, VariationalAutoencoder, CNNCategorizer
 from sessions.Enc_Dec_Session import Enc_Dec_Session
 
-def custom_mse_loss(y_pred, y_true):
-	return ((y_true-y_pred)**2).sum(1).mean()
-
-def calc_acc(input, target):
-	return (torch.argmax(input, 1) == target).sum().item() / input.shape[0]
-
-def kl_loss(mu, logvar):
-	return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
-def calculate_loss_non_generative(model_output, target):
-	return custom_mse_loss(model_output, target)
-
-def calculate_loss_generative(model_output, target):
-	predicted_sequence, mu, logvar = model_output
-	kl_divergence = kl_loss(mu, logvar)
-	mse_loss = custom_mse_loss(predicted_sequence, target)
-	return kl_divergence + mse_loss
-
 global_step_train = 0
 global_step_valid = 0
 global_fig_count = 0
@@ -560,6 +542,8 @@ if __name__ == "__main__":
 	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
 	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")
 	parser.add_argument("-lr", "--learning_rate", type=float, default=0.001, help="Learning rate. Default 0.001")
+	parser.add_argument("--log_dir", type=str, default="runs/", help="Log directory for tensorboard data. Default ./runs/")
+	parser.add_argument("--extra_name", type=str, default="", help="Extra string for tensorboard comment. Default None")
 
 	args = parser.parse_args()
 

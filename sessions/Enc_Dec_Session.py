@@ -50,6 +50,8 @@ class Enc_Dec_Session(CoinSession):
 		comment += "b{batch_size}_"
 		comment += "lr{learning_rate}_"
 		comment += "db{top_db}_"
+		comment += "hs{hidden_size}_"
+		comment += "fc_hd{fc_hidden_dim}_"
 		if self.args.use_windows:
 			comment += "ws{window_size}_"
 			comment += "wg{window_gap}_"
