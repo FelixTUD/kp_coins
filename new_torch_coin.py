@@ -26,34 +26,43 @@ from datasets.WindowedDataset import WindowedDataset
 from datasets.UnWindowedDataset import UnWindowedDataset, Collator
 
 def plot_confusion_matrix(cm, classes,
-                          title=None,
-                          cmap=plt.cm.Blues):
-    fig, ax = plt.subplots()
-    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
-    ax.figure.colorbar(im, ax=ax)
-    # We want to show all ticks...
-    ax.set(xticks=np.arange(cm.shape[1]),
-           yticks=np.arange(cm.shape[0]),
-           # ... and label them with the respective list entries
-           xticklabels=classes, yticklabels=classes,
-           title=title,
-           ylabel='True label',
-           xlabel='Predicted label')
+						  title=None,
+						  cmap=plt.cm.Blues,
+						  args=None):
+	fig, ax = plt.subplots()
+	im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+	ax.figure.colorbar(im, ax=ax)
+	# We want to show all ticks...
+	ax.set(xticks=np.arange(cm.shape[1]),
+		   yticks=np.arange(cm.shape[0]),
+		   # ... and label them with the respective list entries
+		   xticklabels=classes, yticklabels=classes,
+		   title=title,
+		   ylabel='True label',
+		   xlabel='Predicted label')
 
-    # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
-             rotation_mode="anchor")
+	# Rotate the tick labels and set their alignment.
+	plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+			 rotation_mode="anchor")
 
-    # Loop over data dimensions and create text annotations.
-    fmt = '.2f'
-    thresh = cm.max() / 2.
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, format(cm[i, j], fmt),
-                    ha="center", va="center",
-                    color="white" if cm[i, j] > thresh else "black")
-    fig.tight_layout()
-    plt.show()
+	# Loop over data dimensions and create text annotations.
+	fmt = '.2f'
+	thresh = cm.max() / 2.
+	for i in range(cm.shape[0]):
+		for j in range(cm.shape[1]):
+			ax.text(j, i, format(cm[i, j], fmt),
+				ha="center", va="center",
+				color="white" if cm[i, j] > thresh else "black")
+	fig.tight_layout()
+	
+	if args and args.plot_title:
+		plt.title(args.plot_title)
+
+	if args and args.save:
+		plt.savefig(os.path.join(args.save, "confusion.png"), format="png")
+		plt.clf()
+	else:
+		plt.show()
 
 def main(args):
 	if not args.seed:
@@ -120,7 +129,12 @@ def main(args):
 
 		session.run(evaluate=True, test=False)
 
-	if args.mode == "tsne":
+	if args.mode == "metrics":
+		if args.save:
+			os.makedirs(args.save, exist_ok=True)
+
+		# Create tsne and confusion matrix and save at path from --save argument
+
 		from sklearn.manifold import TSNE
 		assert (args.weights), "No weights file specified!"
 
@@ -132,28 +146,23 @@ def main(args):
 		if args.no_state_dict:
 			model = torch.load(args.weights, map_location=device)
 		else:
-			if args.use_variational_autoencoder:
-				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-			else:
-				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-			print("Using: {}".format(type(model).__name__))
-
-			model.load_state_dict(torch.load(args.weights, map_location=device))
+			assert(args.no_state_dict), "State dict is necessary for metrics. Use --no_state_dict during training!"
 
 		model.eval()
-		# Use training examples for now to test
+
 		num_examples_per_class = complete_dataset.get_num_coins_per_class()
 		coins = args.coins
 		colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 
 		plot_colors = []
 
+		print("Generating TSNE plot")
+
 		fig = plt.figure(figsize=(16, 9), dpi=120)
 		ax = fig.add_subplot(111)#, projection="3d")
 
 		i = 0
-		all_encodings = torch.empty(num_examples_per_class*len(coins), args.hidden_size)
+		all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
 		with torch.no_grad():
 			for coin_num, coin in enumerate(coins):
 				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
@@ -162,6 +171,9 @@ def main(args):
 					print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
 					input_tensor = data["input"]
 					encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+
+					if all_encodings is None:
+						all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
 
 					all_encodings[i] = encoded_input[0]
 					plot_colors.append(colors[coin_num])
@@ -188,12 +200,41 @@ def main(args):
 		if args.plot_title:
 			plt.title(args.plot_title)
 
-		if args.save_plot:
-			plt.savefig(args.save_plot, format="png")
+		if args.save:
+			plt.savefig(os.path.join(args.save, "tsne.png"), format="png")
 			plt.clf()
 		else:
 			plt.show()
-		
+
+		from sklearn.metrics import confusion_matrix
+
+		print("Generating confusion matrix")
+
+		expected = []
+		predicted = []
+
+		with torch.no_grad():
+			for coin in coins:
+				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+				for i, data in enumerate(coin_data):
+					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
+
+					input_tensor, label = data["input"], data["label"]
+					expected.append(coins[label])
+
+					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
+					predicted_category = predicted_category.cpu().numpy()
+
+					predicted.append(coins[np.argmax(predicted_category)])
+				print("")
+
+		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
+		print(confusion_matrix)
+		norm_cm = np.divide(confusion_matrix, num_examples_per_class)
+		print(norm_cm)
+
+		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
 
 	if args.mode == "confusion":
 		from sklearn.metrics import confusion_matrix
@@ -367,7 +408,7 @@ if __name__ == "__main__":
 	required_arguments.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
 
 	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
-	parser.add_argument("-m", "--mode", type=str, default="train", help="Mode of the script. Can be either 'train', 'tsne', 'confusion' or 'infer'. Default 'train'")
+	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
 	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
 
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
@@ -378,8 +419,8 @@ if __name__ == "__main__":
 	parser.add_argument("-hs", "--hidden_size", type=int, default=64, help="Size of LSTM/GRU hidden layer. Default: 64")
 	parser.add_argument("-fc_hd", "--fc_hidden_dim", type=int, default=100, help="Hidden dimension size of predictor fully connected layer. Default 100")
 	parser.add_argument("-e", "--epochs", type=int, default=100, help="Number of epochs")
-	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files. Default: None")
-	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'tsne' mode. Default: None")
+	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files or plots. Default: None")
+	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'metrics' mode. Default: None")
 	parser.add_argument("--top_db", type=int, default=2, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end. Default: 2")
 	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
