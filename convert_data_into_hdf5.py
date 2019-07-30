@@ -1,12 +1,17 @@
 import h5py
 import os
 import numpy as np
+import sys
 
 targets = [1, 2, 5, 20, 50, 100, 200]
 
-save_file = h5py.File("data.hdf5")
+# save_file = h5py.File("1024_16_data.hdf5")
+save_file = h5py.File(sys.argv[1])
 
-all_coin_csv_files = os.listdir("coin_data")
+#load_path = "/scratch/p_kpml/vocoder_muenzen/1024_16/"
+load_path = sys.argv[2]
+
+all_coin_csv_files = os.listdir(load_path)
 all_coin_csv_files = list(filter(lambda x: x.endswith(".csv"), all_coin_csv_files))
 
 def load_values_from_csv(file):
@@ -28,7 +33,7 @@ for coin_value in targets:
 	for file in all_coin_value_csv_files:
 		number = file.split(".")[0].split("_")[-1]
 		number_group = g8_group.create_group(number)
-		number_group.create_dataset("values", data=load_values_from_csv("coin_data/{}".format(file)), compression="gzip")
+		number_group.create_dataset("values", data=load_values_from_csv(load_path + file), compression="gzip")
 
 	# g8
 	g8_group = coin_value_group.create_group(str("g8"))
@@ -40,5 +45,5 @@ for coin_value in targets:
 	for file in all_coin_value_csv_files:
 		number = file.split(".")[0].split("_")[-1]
 		number_group = g8_group.create_group(number)
-		number_group.create_dataset("values", data=load_values_from_csv("coin_data/{}".format(file)), compression="gzip")
+		number_group.create_dataset("values", data=load_values_from_csv(load_path + file), compression="gzip")
 

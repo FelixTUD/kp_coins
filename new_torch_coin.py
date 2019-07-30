@@ -236,58 +236,6 @@ def main(args):
 
 		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
 
-	if args.mode == "confusion":
-		from sklearn.metrics import confusion_matrix
-
-		assert (args.weights), "No weights file specified!"
-
-		if cuda_available:
-			device = torch.device('cuda')
-		else:
-			device = torch.device('cpu')
-		model = None
-		if args.no_state_dict:
-			model = torch.load(args.weights, map_location=device)
-		else:
-			if args.use_variational_autoencoder:
-				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-			else:
-				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-			print("Using: {}".format(type(model).__name__))
-
-			model.load_state_dict(torch.load(args.weights, map_location=device))
-		model.eval()
-
-		num_examples_per_class = complete_dataset.get_num_coins_per_class()
-		coins = args.coins
-
-		expected = []
-		predicted = []
-
-		with torch.no_grad():
-			for coin in coins:
-				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
-
-				for i, data in enumerate(coin_data):
-					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
-
-					input_tensor, label = data["input"], data["label"]
-					expected.append(coins[label])
-
-					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
-					predicted_category = predicted_category.cpu().numpy()
-
-					predicted.append(coins[np.argmax(predicted_category)])
-				print("")
-
-		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
-		print(confusion_matrix)
-		norm_cm = np.divide(confusion_matrix, num_examples_per_class)
-		print(norm_cm)
-
-		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix")
-
 	if args.mode == "roc":
 		from sklearn.metrics import roc_curve, auc
 		from itertools import cycle
@@ -361,43 +309,6 @@ def main(args):
 		plt.show()
 
 
-	if args.mode == "infer":
-		raise Exception("This mode needs to be reimplemented") # Remove if reimplemented
-		
-		if args.no_state_dict:
-			model = torch.load(args.weights)
-		else:
-			model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
-
-		gt_val = []
-		pred_val = []
-
-		for i, val_sample_batch in enumerate(validation_dataset):
-
-			if i % num_to_predict == 0:
-
-				input_tensor, output, (de_normalize_min, de_normalize_prod)  = val_sample_batch["input"], val_sample_batch["output"], val_sample_batch["de_normalize"]
-				input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
-				teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
-
-				gt_val += list((((output.cpu().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min))
-
-				# Predict iteratively
-
-				for _ in range(num_to_predict):
-
-					partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-					teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
-
-				pred_val += list(((partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min)
-
-		plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
-		plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
-		plt.legend()
-		plt.savefig("val_pred_plot.pdf", format="pdf")
-		plt.show()
-
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
@@ -435,7 +346,7 @@ if __name__ == "__main__":
 	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
 	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")
 	parser.add_argument("-lr", "--learning_rate", type=float, default=0.001, help="Learning rate. Default 0.001")
-	parser.add_argument("--log_dir", type=str, default="runs/", help="Log directory for tensorboard data. Default ./runs/")
+	parser.add_argument("--log_dir", type=str, default=None, help="Log directory for tensorboard data. Default ./runs/")
 	parser.add_argument("--extra_name", type=str, default="", help="Extra string for tensorboard comment. Default None")
 
 	args = parser.parse_args()
