@@ -236,58 +236,6 @@ def main(args):
 
 		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
 
-	if args.mode == "confusion":
-		from sklearn.metrics import confusion_matrix
-
-		assert (args.weights), "No weights file specified!"
-
-		if cuda_available:
-			device = torch.device('cuda')
-		else:
-			device = torch.device('cpu')
-		model = None
-		if args.no_state_dict:
-			model = torch.load(args.weights, map_location=device)
-		else:
-			if args.use_variational_autoencoder:
-				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-			else:
-				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-			print("Using: {}".format(type(model).__name__))
-
-			model.load_state_dict(torch.load(args.weights, map_location=device))
-		model.eval()
-
-		num_examples_per_class = complete_dataset.get_num_coins_per_class()
-		coins = args.coins
-
-		expected = []
-		predicted = []
-
-		with torch.no_grad():
-			for coin in coins:
-				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
-
-				for i, data in enumerate(coin_data):
-					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
-
-					input_tensor, label = data["input"], data["label"]
-					expected.append(coins[label])
-
-					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
-					predicted_category = predicted_category.cpu().numpy()
-
-					predicted.append(coins[np.argmax(predicted_category)])
-				print("")
-
-		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
-		print(confusion_matrix)
-		norm_cm = np.divide(confusion_matrix, num_examples_per_class)
-		print(norm_cm)
-
-		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix")
-
 	if args.mode == "roc":
 		from sklearn.metrics import roc_curve, auc
 		from itertools import cycle
