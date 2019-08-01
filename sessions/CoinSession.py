@@ -34,7 +34,8 @@ class CoinSession(Session):
 		self.create_new_exisiting_results()
 		self.value_summarize_fn = value_summarize_fn
 
-		self.writer = SummaryWriter(comment=self.args.extra_name + self.comment_string(), flush_secs=30)
+		comment_string = self.comment_string()
+		self.writer = SummaryWriter(log_dir=os.path.join(args.log_dir, self.args.extra_name + comment_string), comment=self.args.extra_name + comment_string, flush_secs=30)
 		
 		if self.args.save:
 			model_save_dir_name = self.writer.log_dir.split("/")[-1]

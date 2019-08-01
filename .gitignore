@@ -1,4 +1,4 @@
-*.hdf5
+﻿*.hdf5
 *.rar
 *.csv
 plots/
@@ -6,6 +6,9 @@ runs/
 trained/
 trained_net/
 runs_pre_gen_model/
+image_runs/
+results/
+results.zip
 
 # Created by https://www.gitignore.io/api/vim,emacs,macos,python,windows,sublimetext,visualstudio,visualstudiocode
 # Edit at https://www.gitignore.io/?templates=vim,emacs,macos,python,windows,sublimetext,visualstudio,visualstudiocode

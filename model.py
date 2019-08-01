@@ -205,7 +205,7 @@ class SimpleRNN(nn.Module):
 
 		self.predictor = Predictor(input_dim=hidden_dim, hidden_dim=args.fc_hidden_dim, output_dim=num_coins)
 
-	def forward(self, input, return_hidden=False):
+	def forward(self, input, return_hidden=False, **kwargs):
 		_, last_hidden = self.encoder(input)
 		if return_hidden:
 			if self.use_lstm:
@@ -315,7 +315,7 @@ class CNNCategorizer(nn.Module):
 		self.sigmoid = nn.Sigmoid()
 		
 
-	def forward(self, input):
+	def forward(self, input, **kwargs):
 		input = self.conv1(input)
 
 		input = self.conv2(input)

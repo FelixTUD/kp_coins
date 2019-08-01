@@ -309,43 +309,6 @@ def main(args):
 		plt.show()
 
 
-	if args.mode == "infer":
-		raise Exception("This mode needs to be reimplemented") # Remove if reimplemented
-		
-		if args.no_state_dict:
-			model = torch.load(args.weights)
-		else:
-			model.load_state_dict(torch.load("rae_teacher_forcing_weights.pt"))
-
-		gt_val = []
-		pred_val = []
-
-		for i, val_sample_batch in enumerate(validation_dataset):
-
-			if i % num_to_predict == 0:
-
-				input_tensor, output, (de_normalize_min, de_normalize_prod)  = val_sample_batch["input"], val_sample_batch["output"], val_sample_batch["de_normalize"]
-				input_tensor = input_tensor.reshape(1, input_tensor.shape[0], input_tensor.shape[1])
-				teacher_input = input_tensor[:,-1,:].reshape(1, 1, 1)
-
-				gt_val += list((((output.cpu().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min))
-
-				# Predict iteratively
-
-				for _ in range(num_to_predict):
-
-					partial_predicted_sequence = model(input=input_tensor, teacher_input=teacher_input)
-
-					teacher_input = torch.cat((teacher_input, partial_predicted_sequence[:,-1,:].reshape(1, 1, 1)), 1)
-
-				pred_val += list(((partial_predicted_sequence[0].cpu().detach().numpy().reshape(num_to_predict)) * de_normalize_prod) + de_normalize_min)
-
-		plt.plot(np.arange(len(gt_val)), gt_val, label="gt")
-		plt.plot(np.arange(len(pred_val)), pred_val, label="pred")
-		plt.legend()
-		plt.savefig("val_pred_plot.pdf", format="pdf")
-		plt.show()
-
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
@@ -383,7 +346,7 @@ if __name__ == "__main__":
 	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
 	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")
 	parser.add_argument("-lr", "--learning_rate", type=float, default=0.001, help="Learning rate. Default 0.001")
-	parser.add_argument("--log_dir", type=str, default="runs/", help="Log directory for tensorboard data. Default ./runs/")
+	parser.add_argument("--log_dir", type=str, default=None, help="Log directory for tensorboard data. Default ./runs/")
 	parser.add_argument("--extra_name", type=str, default="", help="Extra string for tensorboard comment. Default None")
 
 	args = parser.parse_args()
