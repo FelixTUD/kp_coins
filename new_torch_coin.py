@@ -17,6 +17,7 @@ import random
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from collections import defaultdict
 
 from sessions.Enc_Dec_Session import Enc_Dec_Session
 from sessions.CNN_Session import CNN_Session
@@ -161,26 +162,52 @@ def main(args):
 		fig = plt.figure(figsize=(16, 9), dpi=120)
 		ax = fig.add_subplot(111)#, projection="3d")
 
-		i = 0
-		all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
-		with torch.no_grad():
-			for coin_num, coin in enumerate(coins):
-				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+		if args.tsne_set == "validation":
+			encodings = defaultdict(list)
+			validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+			with torch.no_grad():
+				for batch_content in validation_dataloader:
+					input_tensor = batch_content["input"]
+					coin_class = batch_content["label"] # Numeric from 0...numCoins
+					coin_class = coins[coin_class]
 
-				for data in coin_data:
-					print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
-					input_tensor = data["input"]
-					encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+					encoded_input = model(input=input_tensor, return_hidden=True)
+					encodings[coin_class].append(encoded_input[0].numpy())
 
-					if all_encodings is None:
-						all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
+			flattened_encodings = []
+			for i, coin in enumerate(coins):
+				flattened_encodings.extend(encodings[coin])
+				color = colors[i]
+				for _ in range(len(encodings[coin])):
+					plot_colors.append(color)
 
-					all_encodings[i] = encoded_input[0]
-					plot_colors.append(colors[coin_num])
-					i += 1
-				print("")
-		
-		embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
+			flattened_encodings = np.array(flattened_encodings)
+			print(flattened_encodings.shape)
+			print("Embedding...")
+			embedded = TSNE(n_components=2).fit_transform(flattened_encodings)
+
+		elif args.tsne_set == "all":
+			i = 0
+			all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
+			with torch.no_grad():
+				for coin_num, coin in enumerate(coins):
+					coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+					for data in coin_data:
+						print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
+						input_tensor = data["input"]
+						encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+
+						if all_encodings is None:
+							all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
+
+						all_encodings[i] = encoded_input[0]
+						plot_colors.append(colors[coin_num])
+						i += 1
+					print("")
+			
+			print("Embedding...")
+			embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
 
 		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
 
@@ -321,6 +348,7 @@ if __name__ == "__main__":
 	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
 	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
 	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
+	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
 
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=96, help="Batch size. Default 96")
@@ -346,7 +374,7 @@ if __name__ == "__main__":
 	parser.add_argument("--save_plot", type=str, default=None, help="Save file name for plots from 'tsne' and 'confusion' modes. Default None")
 	parser.add_argument("--plot_title", type=str, default=None, help="Title for 'tsne' and 'confusion' plots. Default None")
 	parser.add_argument("-lr", "--learning_rate", type=float, default=0.001, help="Learning rate. Default 0.001")
-	parser.add_argument("--log_dir", type=str, default=None, help="Log directory for tensorboard data. Default ./runs/")
+	parser.add_argument("--log_dir", type=str, default="./runs/", help="Log directory for tensorboard data. Default ./runs/")
 	parser.add_argument("--extra_name", type=str, default="", help="Extra string for tensorboard comment. Default None")
 
 	args = parser.parse_args()

@@ -71,11 +71,15 @@ class WindowedDataset(Dataset):
 		self.generate_coin_mapping_index()
 
 	def generate_coin_mapping_index(self):
-		# To implement
-		pass
+		self.coin_mapping = defaultdict(list)
+		for index, samples in self.preloaded_data.items():
+			for coin, data in samples:
+				self.coin_mapping[coin].append(data)
+		self.min_mapped_samples = min([len(samples) for _, samples in self.coin_mapping.items()])
+		print("Minimum Number of window samples per coin: {}".format(self.min_mapped_samples))
 
 	def get_num_coins_per_class(self):
-		return self.min_num_coins
+		return self.min_mapped_samples
 
 	def get_num_loaded_coins(self):
 		return len(self.coins)
