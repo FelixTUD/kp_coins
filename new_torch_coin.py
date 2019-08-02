@@ -254,7 +254,7 @@ def main(args):
 
 		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
 		print(confusion_matrix)
-		norm_cm = confusion_matrix / np.sum(confusion_matrix, axis=1)
+		norm_cm = confusion_matrix / confusion_matrix.sum(axis=1)[:, np.newaxis]
 		print(norm_cm)
 
 		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
