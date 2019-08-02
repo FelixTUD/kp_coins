@@ -240,25 +240,21 @@ def main(args):
 		expected = []
 		predicted = []
 
+		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 		with torch.no_grad():
-			for coin in coins:
-				coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+			for batch_content in validation_dataloader:
+				input_tensor = batch_content["input"]
+				coin_class = batch_content["label"] # Numeric from 0...numCoins
 
-				for i, data in enumerate(coin_data):
-					print("\rCoin {}: {}/{}".format(coin, i + 1, num_examples_per_class), end="")
+				predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+				predicted_category = predicted_category.cpu().numpy()
 
-					input_tensor, label = data["input"], data["label"]
-					expected.append(coins[label])
-
-					predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
-					predicted_category = predicted_category.cpu().numpy()
-
-					predicted.append(coins[np.argmax(predicted_category)])
-				print("")
+				expected.append(coins[coin_class])
+				predicted.append(coins[np.argmax(predicted_category)])
 
 		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
 		print(confusion_matrix)
-		norm_cm = np.divide(confusion_matrix, num_examples_per_class)
+		norm_cm = confusion_matrix / np.sum(confusion_matrix, axis=1)
 		print(norm_cm)
 
 		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
