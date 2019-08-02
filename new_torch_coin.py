@@ -151,87 +151,94 @@ def main(args):
 
 		model.eval()
 
-		num_examples_per_class = complete_dataset.get_num_coins_per_class()
 		coins = args.coins
-		colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 
-		plot_colors = []
-
-		print("Generating TSNE plot")
-
-		fig = plt.figure(figsize=(16, 9), dpi=120)
-		ax = fig.add_subplot(111)#, projection="3d")
-
-		if args.tsne_set == "validation":
-			encodings = defaultdict(list)
-			validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
-			with torch.no_grad():
-				for batch_content in validation_dataloader:
-					input_tensor = batch_content["input"]
-					coin_class = batch_content["label"] # Numeric from 0...numCoins
-					coin_class = coins[coin_class]
-
-					encoded_input = model(input=input_tensor, return_hidden=True)
-					encodings[coin_class].append(encoded_input[0].numpy())
-
-			flattened_encodings = []
-			for i, coin in enumerate(coins):
-				flattened_encodings.extend(encodings[coin])
-				color = colors[i]
-				for _ in range(len(encodings[coin])):
-					plot_colors.append(color)
-
-			flattened_encodings = np.array(flattened_encodings)
-			print(flattened_encodings.shape)
-			print("Embedding...")
-			embedded = TSNE(n_components=2).fit_transform(flattened_encodings)
-
-		elif args.tsne_set == "all":
-			i = 0
-			all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
-			with torch.no_grad():
-				for coin_num, coin in enumerate(coins):
-					coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
-
-					for data in coin_data:
-						print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
-						input_tensor = data["input"]
-						encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
-
-						if all_encodings is None:
-							all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
-
-						all_encodings[i] = encoded_input[0]
-						plot_colors.append(colors[coin_num])
-						i += 1
-					print("")
+		if args.architecture != "cnn":
+			num_examples_per_class = complete_dataset.get_num_coins_per_class()
 			
-			print("Embedding...")
-			embedded = TSNE(n_components=2).fit_transform(all_encodings.numpy())
+			colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
+			plot_colors = []
 
-		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
+			print("Generating TSNE plot")
 
-		# Create custom legend
-		labels = ["1 ct", "2 ct", "5 ct", "20 ct", "50 ct", "1 €", "2 €"]
-		legend_items = []
-		for i, _ in enumerate(coins):
-			legend_items.append(Line2D([0], [0], marker='o', color="w", label=labels[i], markerfacecolor=colors[i], markersize=15))
- 
-		box = ax.get_position()
-		ax.set_position([box.x0, box.y0 + box.height * 0.1,
-                 		box.width, box.height * 0.9])
+			final_encodings = None
+			if args.tsne_set == "validation":
+				encodings = defaultdict(list)
+				validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+				with torch.no_grad():
+					for batch_content in validation_dataloader:
+						input_tensor = batch_content["input"]
+						coin_class = batch_content["label"] # Numeric from 0...numCoins
+						coin_class = coins[coin_class]
 
-		ax.legend(handles=legend_items, loc='upper center', bbox_to_anchor=(0.5, -0.05),
-          		  fancybox=True, shadow=True, ncol=len(coins))
+						encoded_input = model(input=input_tensor, return_hidden=True)
+						encodings[coin_class].append(encoded_input[0].numpy())
 
-		if args.plot_title:
-			plt.title(args.plot_title)
+				flattened_encodings = []
+				for i, coin in enumerate(coins):
+					flattened_encodings.extend(encodings[coin])
+					color = colors[i]
+					for _ in range(len(encodings[coin])):
+						plot_colors.append(color)
 
-		if args.save:
-			plt.savefig(os.path.join(args.save, "tsne.png"), format="png")
-			plt.clf()
-		else:
-			plt.show()
+				flattened_encodings = np.array(flattened_encodings)
+				print(flattened_encodings.shape)
+				final_encodings = flattened_encodings
+
+			elif args.tsne_set == "all":
+				i = 0
+				all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
+				with torch.no_grad():
+					for coin_num, coin in enumerate(coins):
+						coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
+
+						for data in coin_data:
+							print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
+							input_tensor = data["input"]
+							if args.use_windows:
+								encoded_input = model(input=input_tensor, return_hidden=True)
+							else:
+								encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
+
+							if all_encodings is None:
+								all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
+
+							all_encodings[i] = encoded_input[0]
+							plot_colors.append(colors[coin_num])
+							i += 1
+						print("")
+				
+				final_encodings = all_encodings.numpy()
+			
+			for perplexity in range(10, 140, 10):
+				fig = plt.figure(figsize=(16, 9), dpi=120)
+				ax = fig.add_subplot(111)#, projection="3d")
+
+				print("Embedding with preplexity={}...".format(perplexity))
+				embedded = TSNE(n_components=2, perplexity=perplexity).fit_transform(final_encodings)
+				ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
+
+				# Create custom legend
+				labels = ["1 ct", "2 ct", "5 ct", "20 ct", "50 ct", "1 €", "2 €"]
+				legend_items = []
+				for i, _ in enumerate(coins):
+					legend_items.append(Line2D([0], [0], marker='o', color="w", label=labels[i], markerfacecolor=colors[i], markersize=15))
+		 
+				box = ax.get_position()
+				ax.set_position([box.x0, box.y0 + box.height * 0.1,
+		                 		box.width, box.height * 0.9])
+
+				ax.legend(handles=legend_items, loc='upper center', bbox_to_anchor=(0.5, -0.05),
+		          		  fancybox=True, shadow=True, ncol=len(coins))
+
+				if args.plot_title:
+					plt.title(args.plot_title)
+
+				if args.save:
+					plt.savefig(os.path.join(args.save, "tsne_{}.png".format(perplexity)), format="png")
+					plt.clf()
+				else:
+					plt.show()
 
 		from sklearn.metrics import confusion_matrix
 
@@ -246,7 +253,13 @@ def main(args):
 				input_tensor = batch_content["input"]
 				coin_class = batch_content["label"] # Numeric from 0...numCoins
 
-				predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+				if args.architecture == "cnn":
+					input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+					predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+					predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
+				else:
+					predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+
 				predicted_category = predicted_category.cpu().numpy()
 
 				expected.append(coins[coin_class])

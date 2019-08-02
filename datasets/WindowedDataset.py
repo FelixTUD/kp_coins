@@ -72,7 +72,7 @@ class WindowedDataset(Dataset):
 
 	def generate_coin_mapping_index(self):
 		self.coin_mapping = defaultdict(list)
-		for index, samples in self.preloaded_data.items():
+		for _, samples in self.preloaded_data.items():
 			for coin, data in samples:
 				self.coin_mapping[coin].append(data)
 		self.min_mapped_samples = min([len(samples) for _, samples in self.coin_mapping.items()])
@@ -187,7 +187,7 @@ class WindowedDataset(Dataset):
 			coin = str(coin)
 
 		samples = self.coin_mapping[coin]
-
+		
 		assert(len(samples) >= num_examples)
 		samples = random.sample(samples, num_examples)
 		
