@@ -21,7 +21,7 @@ def main(args):
 
 		values = []
 		for csv_file in csv_files:
-			data = pandas.read_csv(os.path.join(args.path, method, csv_file))
+			data = pandas.read_csv(os.path.join(csv_path, csv_file))
 			idx_of_max = data["Value"].idxmax()
 			values.append(float(data.iloc[idx_of_max]["Value"]))
 
