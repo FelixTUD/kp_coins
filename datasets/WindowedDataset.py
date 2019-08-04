@@ -70,6 +70,24 @@ class WindowedDataset(Dataset):
 
 		self.generate_coin_mapping_index()
 
+	def full_len_for_indices(self, indices):
+		result = []
+		global_index = 0
+		for key, values in self.preloaded_data.items():
+			values_len = len(values)
+			if key in indices:
+				result.extend([x for x in range(global_index, global_index + values_len)])
+			global_index += values_len
+		return result
+
+	def convert_indices(self):
+		# Convert preloaded data into a flat list
+		result = []
+		for _, values in self.preloaded_data.items():
+			result.extend(values)
+
+		self.preloaded_data = result
+
 	def generate_coin_mapping_index(self):
 		self.coin_mapping = defaultdict(list)
 		for _, samples in self.preloaded_data.items():
@@ -179,7 +197,10 @@ class WindowedDataset(Dataset):
 		return len(self.preloaded_data)
 		
 	def __getitem__(self, idx):
-		return random.choice(self.preloaded_data[idx])[1]
+		# print(idx)
+		data = self.preloaded_data[idx]
+		return data[1]
+		# return random.choice(self.preloaded_data[idx])[1]
 
 	def get_data_for_coin_type(self, coin, num_examples):
 		result = []

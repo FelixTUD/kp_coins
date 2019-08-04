@@ -65,7 +65,7 @@ class CNN_Session(CoinSession):
 		existing_results = kwargs["existing_results"]
 		training_mode = kwargs["training"]
 
-		print("{} batch: {}/{}".format("Training" if training_mode else "Evaluating", batch_num + 1, self.num_total_train_steps_per_epoch), end="\r")
+		print("{} batch: {}/{}".format("Training" if training_mode else "Evaluating", batch_num + 1, self.num_total_train_steps_per_epoch if training_mode else self.num_total_validation_steps_per_epoch), end="\r")
 		
 		input_tensor, output = batch_content["input"], batch_content["label"]
 		input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)

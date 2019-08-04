@@ -25,6 +25,7 @@ from sessions.Simple_RNN_Session import Simple_RNN_Session
 
 from datasets.WindowedDataset import WindowedDataset
 from datasets.UnWindowedDataset import UnWindowedDataset, Collator
+from datasets.WindowedSubset import WindowedSubset, windowed_random_split
 
 def plot_confusion_matrix(cm, classes,
 						  title=None,
@@ -92,7 +93,11 @@ def main(args):
 
 	num_examples = len(complete_dataset)
 	validation_dataset_size = int(args.val_split * num_examples)
-	training_dataset, validation_dataset = torch.utils.data.random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
+	if args.architecture == "cnn" or args.use_windows:
+		training_dataset, validation_dataset = windowed_random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
+		complete_dataset.convert_indices()
+	else: 
+		training_dataset, validation_dataset = torch.utils.data.random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
 	
 	print("Training dataset length: {}".format(len(training_dataset)))
 	print("Validation dataset length: {}".format(len(validation_dataset)))
