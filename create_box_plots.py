@@ -30,7 +30,7 @@ def main(args):
 	method_labels = []
 	for method in methods:
 		if method == "cnn":
-			method_labels.append("CNN")
+			method_labels.append("CNN windowed")
 		elif method == "enc_dec":
 			method_labels.append("Encoder-Decoder")
 		elif method == "simple_rnn":
