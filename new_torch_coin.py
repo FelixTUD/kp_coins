@@ -251,104 +251,67 @@ def main(args):
 
 		expected = []
 		predicted = []
+		
+		if "classic" == args.val_mode:
+			print("Validating using the classis mode")
+			
+			validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+			with torch.no_grad():
+				for batch_content in validation_dataloader:
+					input_tensor = batch_content["input"]
+					coin_class = batch_content["label"] # Numeric from 0...numCoins
 
-		validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
-		with torch.no_grad():
-			for batch_content in validation_dataloader:
-				input_tensor = batch_content["input"]
-				coin_class = batch_content["label"] # Numeric from 0...numCoins
+					if args.architecture == "cnn":
+						input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+						predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
+					else:
+						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 
-				if args.architecture == "cnn":
-					input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
-					predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
-					predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
-				else:
-					predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+					predicted_category = predicted_category.cpu().numpy()
 
-				predicted_category = predicted_category.cpu().numpy()
+					expected.append(coins[coin_class])
+					predicted.append(coins[np.argmax(predicted_category)])
 
-				expected.append(coins[coin_class])
-				predicted.append(coins[np.argmax(predicted_category)])
+		else:
+			assert(args.architecture == "cnn" or args.use_windows == True)
+			print("Validating using window majority mode")
+
+			coin_indices = validation_dataset.coin_indices
+
+			with torch.no_grad():
+				for coin_index in coin_indices:
+					windows = complete_dataset.get_all_windows_for_index(coin_index)
+					target_label = int(windows[0][0])
+
+					predicted_categories = []
+					for _, data in windows:
+						input_tensor = data["input"]
+
+						if args.architecture == "cnn":
+							input_tensor = input_tensor.unsqueeze(0) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+							input_tensor = input_tensor.unsqueeze(0) # Introduce batch dimension
+							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+							predicted_category = predicted_category.squeeze(0) # Remove batch dimension
+							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
+						else:
+							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+
+						predicted_category = predicted_category.cpu().numpy()
+						predicted_categories.append(coins[np.argmax(predicted_category)])
+
+					majority_class = max(set(predicted_categories), key=predicted_categories.count)
+					expected.append(target_label)
+					predicted.append(majority_class)
 
 		confusion_matrix = confusion_matrix(expected, predicted, labels=coins)
 		print(confusion_matrix)
 		norm_cm = confusion_matrix / confusion_matrix.sum(axis=1)[:, np.newaxis]
 		print(norm_cm)
 
-		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix", args=args)
+		percentage_correct = sum([1 for x,y in zip(expected, predicted) if x==y]) / len(expected) * 100.0
 
-	if args.mode == "roc":
-		from sklearn.metrics import roc_curve, auc
-		from itertools import cycle
-
-		assert (args.weights), "No weights file specified!"
-
-		if cuda_available:
-			device = torch.device('cuda')
-		else:
-			device = torch.device('cpu')
-		model = None
-		if args.no_state_dict:
-			model = torch.load(args.weights, map_location=device)
-		else:
-			if args.use_variational_autoencoder:
-				model = VariationalAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-			else:
-				model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=complete_dataset.get_num_loaded_coins(), args=args)
-
-			print("Using: {}".format(type(model).__name__))
-
-			model.load_state_dict(torch.load(args.weights, map_location=device))
-		model.eval()
-
-		num_examples_per_class = complete_dataset.get_num_coins_per_class()
-		coins = args.coins
-
-		expected = []
-		predicted = []
-
-		with torch.no_grad():
-			for i, data in enumerate(complete_dataset):
-				print("\rTesting: {}/{}".format(i + 1, len(complete_dataset)), end="")
-
-				input_tensor, label = data["input"], data["label"]
-				expected.append(label)
-
-				predicted_category = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), use_predictor=True, teacher_input=None)
-				predicted_category = predicted_category.cpu().numpy()
-
-				predicted.append(np.argmax(predicted_category))
-
-		fpr = dict()
-		tpr = dict()
-		roc_auc = dict()
-
-		for class_index in range(len(coins)):
-			expected = np.array(expected)
-			predicted = np.array(predicted)
-			one_vs_all_expected = np.where(expected == class_index, 1, 0)
-			one_vs_all_predicted = np.where(predicted == class_index, 1, 0)
-
-			fpr[class_index], tpr[class_index], _ = roc_curve(one_vs_all_expected, one_vs_all_predicted)
-			roc_auc[class_index] = auc(fpr[class_index], tpr[class_index])
-
-		colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'])
-		lw = 2
-		plt.figure()
-		for i, color in zip(range(len(coins)), colors):
-			plt.plot(fpr[i], tpr[i], color=color, lw=lw,
-					 label='ROC curve of class {0} (area = {1:0.2f})'
-					 ''.format(coins[i], roc_auc[i]))
-
-		plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-		plt.xlim([0.0, 1.0])
-		plt.ylim([0.0, 1.05])
-		plt.xlabel('False Positive Rate')
-		plt.ylabel('True Positive Rate')
-		plt.title('Receiver operating characteristic example')
-		plt.legend(loc="lower right")
-		plt.show()
-
+		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix ({:.2f}% overall accuracy)".format(percentage_correct), args=args)
 
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
@@ -363,6 +326,7 @@ if __name__ == "__main__":
 	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
 	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
 	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
+	parser.add_argument("--val_mode", type=str, choices=["classic", "window_majority"], default="classic", help="Whether to create the evaluation confusion matrix by comparing each window result with the corresponding label or compare the majority vote of the predicted windows to the target label. Default: classic.")
 
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=96, help="Batch size. Default 96")

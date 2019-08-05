@@ -35,6 +35,11 @@ def main(args):
 			method_labels.append("Encoder-Decoder")
 		elif method == "simple_rnn":
 			method_labels.append("Simple RNN")
+		elif method == "enc_dec_windowed":
+			method_labels.append("Encoder-Decoder windowed")
+		elif method == "simple_rnn_windowed":
+			method_labels.append("Simple RNN windowed")
+
 
 	plt.boxplot(method_values, labels=method_labels)
 	plt.xlabel("Method")

@@ -14,6 +14,7 @@ def windowed_random_split(dataset, lengths):
 class WindowedSubset(Subset):
     def __init__(self, dataset, indices):
         self.dataset = dataset
+        self.coin_indices = indices
 
         self.indices = self.dataset.full_len_for_indices(indices)
         random.shuffle(self.indices)
