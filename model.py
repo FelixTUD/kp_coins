@@ -283,14 +283,14 @@ class ConvLayer(nn.Module):
 		super(ConvLayer, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		#self.pool = nn.MaxPool1d(2)
 		self.relu = nn.ReLU()
+		self.pool = nn.MaxPool1d(2)
 
 	def forward(self, input):
 		input = self.conv(input)
 		input = self.bnorm(input)
 		input = self.relu(input)
-		#input = self.pool(input)
+		input = self.pool(input)
 		return input
 
 class CNNCategorizer(nn.Module):
@@ -304,13 +304,13 @@ class CNNCategorizer(nn.Module):
 
 		self.conv4 = ConvLayer(64, 64, 3, padding=1)
 
-		#self.conv5 = ConvLayer(64, 64, 3, padding=1)
+		self.conv5 = ConvLayer(64, 64, 3, padding=1)
 
-		#self.conv6 = ConvLayer(64, 64, 3, padding=1)
+		self.conv6 = ConvLayer(64, 64, 3, padding=1)
 
-		self.apool = nn.AvgPool1d(kernel_size=64, padding=32)
+		#self.apool = nn.AvgPool1d(kernel_size=64, padding=32)
 
-		self.fc_out = nn.Linear(((args.window_size // 64) + 1) * 64, num_coins)
+		self.fc_out = nn.Linear((args.window_size // 64) * 64, num_coins)
 		self.bnorm_out = nn.BatchNorm1d(num_coins)
 		self.sigmoid = nn.Sigmoid()
 		
@@ -324,11 +324,11 @@ class CNNCategorizer(nn.Module):
 
 		input = self.conv4(input)
 
-		#input = self.conv5(input)
+		input = self.conv5(input)
 
-		#input = self.conv6(input)
+		input = self.conv6(input)
 
-		input = self.apool(input)
+		#input = self.apool(input)
 
 		input = input.view(input.size(0), -1)
 
