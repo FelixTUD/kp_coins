@@ -70,6 +70,29 @@ class WindowedDataset(Dataset):
 
 		self.generate_coin_mapping_index()
 
+	def full_len_for_indices(self, indices):
+		result = []
+		global_index = 0
+		for key, values in self.preloaded_data.items():
+			values_len = len(values)
+			if key in indices:
+				result.extend([x for x in range(global_index, global_index + values_len)])
+			global_index += values_len
+		return result
+
+	def convert_indices(self):
+		# Convert preloaded data into a flat list
+		self.original_coin_mapping = self.preloaded_data
+
+		result = []
+		for _, values in self.preloaded_data.items():
+			result.extend(values)
+
+		self.preloaded_data = result
+
+	def get_all_windows_for_index(self, index):
+		return self.original_coin_mapping[index]
+
 	def generate_coin_mapping_index(self):
 		self.coin_mapping = defaultdict(list)
 		for _, samples in self.preloaded_data.items():
@@ -87,12 +110,15 @@ class WindowedDataset(Dataset):
 	def get_max_length(self):
 		return self.max_length
 
-	def preprocess_time_series(self, timeseries):
+	def trim_timeseries(self, timeseries):
 		timeseries = self.rosa.effects.trim(timeseries, top_db=self.top_db)[0][::self.shrink]
 
 		if timeseries.size < self.window_size:
 			timeseries = self.rosa.util.fix_length(timeseries, self.window_size)
 
+		return timeseries
+
+	def scale_timeseries(self, timeseries):
 		min = np.min(timeseries)
 		max = np.max(timeseries)
 		return (2*(timeseries - min) / (max - min)) - 1
@@ -133,15 +159,17 @@ class WindowedDataset(Dataset):
 				print("\rPreloading coin {}: {}/{}".format(coin, index + 1, len(samples)), end="")
 
 				timeseries = self.data_file[coin][gain][example]["values"][:]
-				timeseries = self.preprocess_time_series(timeseries)
+				timeseries = self.trim_timeseries(timeseries)
 
 				if timeseries.size == self.window_size:
+					timeseries = self.scale_timeseries(timeseries)
 					self.preloaded_data[global_index].append((coin, self.generate_data(timeseries, coin)))
 					self.total_windows += 1
 					global_index += 1
 				else:
 					for i in range(0, timeseries.size - self.window_size, self.window_gap):
 						window = timeseries[i:i+self.window_size]
+						window = self.scale_timeseries(window)
 						self.preloaded_data[global_index].append((coin, self.generate_data(window, coin)))
 						self.total_windows += 1
 					global_index += 1
@@ -179,7 +207,10 @@ class WindowedDataset(Dataset):
 		return len(self.preloaded_data)
 		
 	def __getitem__(self, idx):
-		return random.choice(self.preloaded_data[idx])[1]
+		# print(idx)
+		data = self.preloaded_data[idx]
+		return data[1]
+		# return random.choice(self.preloaded_data[idx])[1]
 
 	def get_data_for_coin_type(self, coin, num_examples):
 		result = []

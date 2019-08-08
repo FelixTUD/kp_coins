@@ -17,7 +17,7 @@ def main(args):
 			continue
 
 		csv_files = os.listdir(csv_path)
-		csv_files = list(filter(lambda x: x.endswith(".csv"), csv_files))
+		#csv_files = list(filter(lambda x: x.endswith(".csv"), csv_files))
 
 		values = []
 		for csv_file in csv_files:
@@ -30,13 +30,32 @@ def main(args):
 	method_labels = []
 	for method in methods:
 		if method == "cnn":
-			method_labels.append("CNN")
+			method_labels.append("CNN 1024 s1")
+		if method == "cnn_4096":
+			method_labels.append("CNN 4096 s1")
+		if method == "cnn_4096_s4":
+			method_labels.append("CNN 4096 s4")
 		elif method == "enc_dec":
-			method_labels.append("Encoder-Decoder")
+			method_labels.append("Enc-Dec")
 		elif method == "simple_rnn":
 			method_labels.append("Simple RNN")
+		elif method == "enc_dec_windowed":
+			method_labels.append("Enc-Dec 1024 s1")
+		elif method == "enc_dec_windowed_4096":
+			method_labels.append("Enc-Dec 4096 s1")
+		elif method == "enc_dec_windowed_4096_s4":	
+			method_labels.append("Enc-Dec 4096 s2")
+		elif method == "simple_rnn_windowed":
+			method_labels.append("Simple RNN 1024 s1")
+		elif method == "simple_rnn_windowed_4096":
+			method_labels.append("Simple RNN 4096 s1")
+		elif method == "simple_rnn_windowed_4096_s4":
+			method_labels.append("Simple RNN 4096 s4")
 
-	plt.boxplot(method_values, labels=method_labels)
+	fig, ax = plt.subplots()
+	ax.boxplot(method_values, labels=method_labels)
+	plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+			 rotation_mode="anchor")
 	plt.xlabel("Method")
 	plt.ylabel("Best validation accuracy in %")
 	plt.show()
