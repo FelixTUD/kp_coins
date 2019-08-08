@@ -21,9 +21,9 @@ def main(args):
 
 		values = []
 		for csv_file in csv_files:
-			data = pandas.read_csv(os.path.join(args.path, method, csv_file))
+			data = pandas.read_csv(os.path.join(csv_path, csv_file))
 			idx_of_max = data["Value"].idxmax()
-			values.append(float(data.iloc[idx_of_max]["Value"]))
+			values.append(float(data.iloc[idx_of_max]["Value"]) * 100)
 
 		method_values.append(values)
 
@@ -38,7 +38,7 @@ def main(args):
 
 	plt.boxplot(method_values, labels=method_labels)
 	plt.xlabel("Method")
-	plt.ylabel("Best validation accuracy")
+	plt.ylabel("Best validation accuracy in %")
 	plt.show()
 
 

@@ -1,5 +1,6 @@
 #!/bin/bash
 
+export DATA_PATH=/warm_archive/ws/s0403431-kp_ml_data/data.hdf5
 export MODE=train
 export NUM_EPOCHS=100
 export BATCH_SIZE=96
