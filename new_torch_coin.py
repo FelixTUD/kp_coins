@@ -158,9 +158,8 @@ def main(args):
 
 		coins = args.coins
 
-		if args.architecture != "cnn":
+		if args.architecture != "cnn" and not args.skip_tsne:
 			num_examples_per_class = complete_dataset.get_num_coins_per_class()
-			
 			colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 			plot_colors = []
 
@@ -171,13 +170,15 @@ def main(args):
 				encodings = defaultdict(list)
 				validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
 				with torch.no_grad():
-					for batch_content in validation_dataloader:
+					for i, batch_content in enumerate(validation_dataloader):
+						print("\r{}/{}".format(i + 1, len(complete_dataset)), end="")
 						input_tensor = batch_content["input"]
 						coin_class = batch_content["label"] # Numeric from 0...numCoins
 						coin_class = coins[coin_class]
 
 						encoded_input = model(input=input_tensor, return_hidden=True)
 						encodings[coin_class].append(encoded_input[0].numpy())
+				print("")
 
 				flattened_encodings = []
 				for i, coin in enumerate(coins):
@@ -191,29 +192,30 @@ def main(args):
 				final_encodings = flattened_encodings
 
 			elif args.tsne_set == "all":
-				i = 0
-				all_encodings = None #torch.empty(num_examples_per_class*len(coins), args.hidden_size)
-				with torch.no_grad():
-					for coin_num, coin in enumerate(coins):
-						coin_data = complete_dataset.get_data_for_coin_type(coin=coin, num_examples=num_examples_per_class)
-
-						for data in coin_data:
-							print("\rCoin {}: {}/{}".format(coin, (i % num_examples_per_class) + 1, num_examples_per_class), end="")
-							input_tensor = data["input"]
-							if args.use_windows:
-								encoded_input = model(input=input_tensor, return_hidden=True)
-							else:
-								encoded_input = model(input=input_tensor.view(1, input_tensor.shape[0], input_tensor.shape[1]), return_hidden=True)
-
-							if all_encodings is None:
-								all_encodings = torch.empty(num_examples_per_class*len(coins), encoded_input.shape[1])
-
-							all_encodings[i] = encoded_input[0]
-							plot_colors.append(colors[coin_num])
-							i += 1
-						print("")
+				encodings = defaultdict(list)
+				complete_dataloader = DataLoader(complete_dataset, batch_size=1, shuffle=True, num_workers=0)
 				
-				final_encodings = all_encodings.numpy()
+				with torch.no_grad():
+					for i, batch_content in enumerate(complete_dataloader):
+						print("\r{}/{}".format(i + 1, len(complete_dataset)), end="")
+						input_tensor = batch_content["input"]
+						coin_class = batch_content["label"]
+						coin_class = coins[coin_class]
+
+						encoded_input = model(input=input_tensor, return_hidden=True)
+						encodings[coin_class].append(encoded_input[0].numpy())
+				print("")
+
+				flattened_encodings = []
+				for i, coin in enumerate(coins):
+					flattened_encodings.extend(encodings[coin])
+					color = colors[i]
+					for _ in range(len(encodings[coin])):
+						plot_colors.append(color)
+
+				flattened_encodings = np.array(flattened_encodings)
+				print(flattened_encodings.shape)
+				final_encodings = flattened_encodings
 			
 			for perplexity in range(10, 140, 10):
 				fig = plt.figure(figsize=(16, 9), dpi=120)
@@ -295,7 +297,9 @@ def main(args):
 							predicted_category = predicted_category.squeeze(0) # Remove batch dimension
 							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
 						else:
+							input_tensor = input_tensor.unsqueeze(0) # Introduce batch dimension
 							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
 
 						predicted_category = predicted_category.cpu().numpy()
 						predicted_categories.append(coins[np.argmax(predicted_category)])
@@ -327,6 +331,8 @@ if __name__ == "__main__":
 	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
 	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
 	parser.add_argument("--val_mode", type=str, choices=["classic", "window_majority"], default="classic", help="Whether to create the evaluation confusion matrix by comparing each window result with the corresponding label or compare the majority vote of the predicted windows to the target label. Default: classic.")
+	parser.add_argument("--skip_tsne", action="store_true", help="If set, skips the tsne creation step when using metrics mode.")
+	
 
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=96, help="Batch size. Default 96")
