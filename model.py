@@ -315,7 +315,7 @@ class CNNCategorizer(nn.Module):
 		self.sigmoid = nn.Sigmoid()
 		
 
-	def forward(self, input, **kwargs):
+	def forward(self, input, return_hidden=False, **kwargs):
 		input = self.conv1(input)
 
 		input = self.conv2(input)
@@ -331,6 +331,8 @@ class CNNCategorizer(nn.Module):
 		#input = self.apool(input)
 
 		input = input.view(input.size(0), -1)
+		if return_hidden:
+			return input.cpu()
 
 		input = self.fc_out(input)
 		input = self.bnorm_out(input)

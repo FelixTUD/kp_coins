@@ -158,7 +158,7 @@ def main(args):
 
 		coins = args.coins
 
-		if args.architecture != "cnn" and not args.skip_tsne:
+		if not args.skip_tsne:
 			num_examples_per_class = complete_dataset.get_num_coins_per_class()
 			colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
 			plot_colors = []
@@ -176,7 +176,13 @@ def main(args):
 						coin_class = batch_content["label"] # Numeric from 0...numCoins
 						coin_class = coins[coin_class]
 
-						encoded_input = model(input=input_tensor, return_hidden=True)
+						if args.architecture == "cnn":
+							input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+							encoded_input = model(input=input_tensor, return_hidden=True)
+							input_tensor = input_tensor.squeeze(1) # Delete channel dimension
+						else:
+							encoded_input = model(input=input_tensor, return_hidden=True)
+						
 						encodings[coin_class].append(encoded_input[0].numpy())
 				print("")
 
@@ -202,7 +208,13 @@ def main(args):
 						coin_class = batch_content["label"]
 						coin_class = coins[coin_class]
 
-						encoded_input = model(input=input_tensor, return_hidden=True)
+						if args.architecture == "cnn":
+							input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+							encoded_input = model(input=input_tensor, return_hidden=True)
+							input_tensor = input_tensor.squeeze(1) # Delete channel dimension
+						else:
+							encoded_input = model(input=input_tensor, return_hidden=True)
+
 						encodings[coin_class].append(encoded_input[0].numpy())
 				print("")
 
