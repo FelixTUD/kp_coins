@@ -277,10 +277,152 @@ class Autoencoder(nn.Module):
 		for param in self.decoder.parameters():
 			param.requires_grad = True
 
+class CNNEncoder(nn.Module):
+	def __init__(self, feature_dim):
+		super(CNNEncoder, self).__init__()
+
+		self.conv1 = ConvLayerDown(feature_dim, 16, 3, padding=1)
+
+		self.conv2 = ConvLayerDown(16, 16, 3, padding=1)
+
+		self.conv3 = ConvLayerDown(16, 16, 3, padding=1)
+
+		self.conv4 = ConvLayerDown(16, 16, 3, padding=1)
+
+		self.conv5 = ConvLayerDown(16, 16, 3, padding=1)
+
+		self.conv6 = ConvLayerDown(16, 16, 3, padding=1)
+
+	def forward(self, input):
+		input = self.conv1(input)
+
+		input = self.conv2(input)
+
+		input = self.conv3(input)
+
+		input = self.conv4(input)
+
+		input = self.conv5(input)
+
+		input = self.conv6(input)
+		return input
+
+class CNNPredictor(nn.Module):
+	def __init__(self, feature_dim, num_coins, args):
+		super(CNNPredictor, self).__init__()
+
+		self.fc_out = nn.Linear(((args.window_size // 64)) * 16, num_coins)
+		self.bnorm_out = nn.BatchNorm1d(num_coins)
+		self.sigmoid = nn.Sigmoid()
+
+	def forward(self, input):
+		input = input.view(input.size(0), -1)
+
+		input = self.fc_out(input)
+		input = self.bnorm_out(input)
+		input = self.sigmoid(input)
+		#input = self.bnorm_out(input)
+		return input
+
+class CNNDecoder(nn.Module):
+	def __init__(self, feature_dim):
+		super(CNNDecoder, self).__init__()
+
+		self.conv6 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv5 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv4 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv3 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv2 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv1 = ConvLayerUp(16, 16, 3, padding=1)
+
+		self.conv0 = ConvLayer(16, feature_dim, 3, padding=1)
+
+	def forward(self, input):
+		input = self.conv6(input)
+
+		input = self.conv5(input)
+
+		input = self.conv4(input)
+
+		input = self.conv3(input)
+
+		input = self.conv2(input)
+
+		input = self.conv1(input)
+
+		input = self.conv0(input)
+		return input
+
+class CNNAutoencoder(nn.Module):
+	def __init__(self, feature_dim, num_coins, args):
+		super(CNNAutoencoder, self).__init__()
+
+		self.encoder = CNNEncoder(feature_dim)
+		self.decoder = CNNDecoder(feature_dim)
+
+		self.predictor = CNNPredictor(feature_dim=feature_dim, num_coins=num_coins, args=args)
+
+	def forward(self, input, use_predictor=False, return_hidden=False, **kwargs):
+		last = self.encoder(input)
+
+		if return_hidden:
+			return last.view(input.size(0), -1).cpu()
+
+		if use_predictor:
+			return self.predictor(last)
+		else:
+			return self.decoder(last)
+
+	def get_encoder_param(self):
+		return list(self.encoder.parameters())
+
+	def get_decoder_param(self):
+		return list(self.decoder.parameters())
+
+	def get_predictor_param(self):
+		# return list(self.encoder.parameters()) + list(self.predictor.parameters())
+		return list(self.predictor.parameters())
+
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())
+
+class ConvLayerUp(nn.Module):
+	def __init__(self, in_channels, out_channels, filter_size, padding):
+		super(ConvLayerUp, self).__init__()
+		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
+		self.bnorm = nn.BatchNorm1d(out_channels)
+		self.relu = nn.ReLU()
+		self.upsample = nn.Upsample(scale_factor=2)
+
+
+	def forward(self, input):
+		input = self.conv(input)
+		input = self.bnorm(input)
+		input = self.relu(input)
+		input = self.upsample(input)
+		return input
 
 class ConvLayer(nn.Module):
 	def __init__(self, in_channels, out_channels, filter_size, padding):
 		super(ConvLayer, self).__init__()
+		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
+		self.bnorm = nn.BatchNorm1d(out_channels)
+		self.relu = nn.ReLU()
+
+	def forward(self, input):
+		input = self.conv(input)
+		input = self.bnorm(input)
+		input = self.relu(input)
+		return input
+
+class ConvLayerDown(nn.Module):
+	def __init__(self, in_channels, out_channels, filter_size, padding):
+		super(ConvLayerDown, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
 		self.relu = nn.ReLU()
@@ -296,17 +438,17 @@ class ConvLayer(nn.Module):
 class CNNCategorizer(nn.Module):
 	def __init__(self, feature_dim, num_coins, args):
 		super(CNNCategorizer, self).__init__()
-		self.conv1 = ConvLayer(feature_dim, 64, 3, padding=1)
+		self.conv1 = ConvLayerDown(feature_dim, 64, 3, padding=1)
 
-		self.conv2 = ConvLayer(64, 64, 3, padding=1)
+		self.conv2 = ConvLayerDown(64, 64, 3, padding=1)
 
-		self.conv3 = ConvLayer(64, 64, 3, padding=1)
+		self.conv3 = ConvLayerDown(64, 64, 3, padding=1)
 
-		self.conv4 = ConvLayer(64, 64, 3, padding=1)
+		self.conv4 = ConvLayerDown(64, 64, 3, padding=1)
 
-		self.conv5 = ConvLayer(64, 64, 3, padding=1)
+		self.conv5 = ConvLayerDown(64, 64, 3, padding=1)
 
-		self.conv6 = ConvLayer(64, 64, 3, padding=1)
+		self.conv6 = ConvLayerDown(64, 64, 3, padding=1)
 
 		#self.apool = nn.AvgPool1d(kernel_size=64, padding=32)
 

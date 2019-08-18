@@ -22,6 +22,7 @@ from collections import defaultdict
 from sessions.Enc_Dec_Session import Enc_Dec_Session
 from sessions.CNN_Session import CNN_Session
 from sessions.Simple_RNN_Session import Simple_RNN_Session
+from sessions.CNN_Enc_Dec_Session import CNN_Enc_Dec_Session
 
 from datasets.WindowedDataset import WindowedDataset
 from datasets.UnWindowedDataset import UnWindowedDataset, Collator
@@ -86,14 +87,14 @@ def main(args):
 	cuda_available = torch.cuda.is_available() and not args.run_cpu
 
 	complete_dataset = None
-	if args.architecture == "cnn" or args.use_windows:
+	if args.architecture == "cnn" or args.architecture == "cnn_enc_dec" or args.use_windows:
 		complete_dataset = WindowedDataset(args)
 	else:
 		complete_dataset = UnWindowedDataset(args)
 
 	num_examples = len(complete_dataset)
 	validation_dataset_size = int(args.val_split * num_examples)
-	if args.architecture == "cnn" or args.use_windows:
+	if args.architecture == "cnn" or args.architecture == "cnn_enc_dec" or args.use_windows:
 		training_dataset, validation_dataset = windowed_random_split(complete_dataset, [num_examples - validation_dataset_size, validation_dataset_size])
 		complete_dataset.convert_indices()
 	else: 
@@ -103,7 +104,7 @@ def main(args):
 	print("Validation dataset length: {}".format(len(validation_dataset)))
 	# print("Test dataset length: {}".format(len(test_dataset)))
 
-	if args.architecture == "cnn":
+	if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 		training_dataloader = DataLoader(training_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 		validation_dataloader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
 	else:
@@ -126,6 +127,12 @@ def main(args):
 								  training_dataloader=training_dataloader, 
 								  validation_dataloader=validation_dataloader,
 								  num_loaded_coins=complete_dataset.get_num_loaded_coins())
+
+		elif args.architecture == "cnn_enc_dec":
+			session = CNN_Enc_Dec_Session(args=args, 
+										  training_dataloader=training_dataloader, 
+										  validation_dataloader=validation_dataloader,
+										  num_loaded_coins=complete_dataset.get_num_loaded_coins())
 
 		elif args.architecture == "simple_rnn":
 			session = Simple_RNN_Session(args=args, 
@@ -176,7 +183,7 @@ def main(args):
 						coin_class = batch_content["label"] # Numeric from 0...numCoins
 						coin_class = coins[coin_class]
 
-						if args.architecture == "cnn":
+						if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 							input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
 							encoded_input = model(input=input_tensor, return_hidden=True)
 							input_tensor = input_tensor.squeeze(1) # Delete channel dimension
@@ -208,7 +215,7 @@ def main(args):
 						coin_class = batch_content["label"]
 						coin_class = coins[coin_class]
 
-						if args.architecture == "cnn":
+						if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 							input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
 							encoded_input = model(input=input_tensor, return_hidden=True)
 							input_tensor = input_tensor.squeeze(1) # Delete channel dimension
@@ -275,7 +282,7 @@ def main(args):
 					input_tensor = batch_content["input"]
 					coin_class = batch_content["label"] # Numeric from 0...numCoins
 
-					if args.architecture == "cnn":
+					if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 						input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
 						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 						predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
@@ -288,7 +295,7 @@ def main(args):
 					predicted.append(coins[np.argmax(predicted_category)])
 
 		else:
-			assert(args.architecture == "cnn" or args.use_windows == True)
+			assert(args.architecture == "cnn" or args.architecture == "cnn_enc_dec" or args.use_windows == True)
 			print("Validating using window majority mode")
 
 			coin_indices = validation_dataset.coin_indices
@@ -302,7 +309,7 @@ def main(args):
 					for _, data in windows:
 						input_tensor = data["input"]
 
-						if args.architecture == "cnn":
+						if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 							input_tensor = input_tensor.unsqueeze(0) # Introduce channel dimension, we have just 1 channel (=feature_dim)
 							input_tensor = input_tensor.unsqueeze(0) # Introduce batch dimension
 							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
@@ -340,7 +347,7 @@ if __name__ == "__main__":
 
 	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
 	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
-	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
+	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "cnn_enc_dec", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
 	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
 	parser.add_argument("--val_mode", type=str, choices=["classic", "window_majority"], default="classic", help="Whether to create the evaluation confusion matrix by comparing each window result with the corresponding label or compare the majority vote of the predicted windows to the target label. Default: classic.")
 	parser.add_argument("--skip_tsne", action="store_true", help="If set, skips the tsne creation step when using metrics mode.")
