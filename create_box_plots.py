@@ -29,11 +29,13 @@ def main(args):
 
 	method_labels = []
 	for method in methods:
-		if method == "cnn":
+		if method == "cnn_enc_dec":
+			method_labels.append("CNN Autoencoder")
+		elif method == "cnn":
 			method_labels.append("CNN 1024 s1")
-		if method == "cnn_4096":
+		elif method == "cnn_4096":
 			method_labels.append("CNN 4096 s1")
-		if method == "cnn_4096_s4":
+		elif method == "cnn_4096_s4":
 			method_labels.append("CNN 4096 s4")
 		elif method == "enc_dec":
 			method_labels.append("Enc-Dec")
@@ -51,6 +53,22 @@ def main(args):
 			method_labels.append("Simple RNN 4096 s1")
 		elif method == "simple_rnn_windowed_4096_s4":
 			method_labels.append("Simple RNN 4096 s4")
+		elif method == "cnn_1024_16":
+			method_labels.append("CNN 1024_16")
+		elif method == "cnn_256_16":
+			method_labels.append("CNN 256_16")
+		elif method == "cnn_enc_dec_1024_16":
+			method_labels.append("CNN Autoencoder 1024_16")
+		elif method == "cnn_enc_dec_256_16":
+			method_labels.append("CNN Autoencoder 256_16")
+		elif method == "enc_dec_1024_16":
+			method_labels.append("Enc Dec 1024_16")
+		elif method == "enc_dec_256_16":
+			method_labels.append("Enc Dec 256_16")
+		elif method == "simple_rnn_1024_16":
+			method_labels.append("Simple RNN 1024_16")
+		elif method == "simple_rnn_256_16":
+			method_labels.append("Simple RNN 256_16")
 
 	fig, ax = plt.subplots()
 	ax.boxplot(method_values, labels=method_labels)
