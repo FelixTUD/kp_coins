@@ -24,7 +24,7 @@ six==1.12.0
 tb-nightly==1.14.0a20190511
 torch==1.1.0
 torchvision==0.2.2.post3
-Werkzeug==0.15.2
+Werkzeug==0.15.3
 librosa==0.6.3
 ```
 
