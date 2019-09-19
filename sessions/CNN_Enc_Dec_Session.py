@@ -132,8 +132,6 @@ class CNN_Enc_Dec_Session(CoinSession):
 	
 		if self.args.freeze:
 			encoded = self.model(input=input_tensor, use_predictor=True).detach()
-			print(encoded.shape)
-			assert(1==2)
 			predicted_category = self.predictor(encoded)
 		else:
 			predicted_category = self.model(input=input_tensor, use_predictor=True)
