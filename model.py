@@ -75,6 +75,42 @@ class Predictor(nn.Module):
 
 		return input
 
+# class Predictor(nn.Module):
+# 	def __init__(self, input_dim, hidden_dim, output_dim):
+# 		super(Predictor, self).__init__()
+
+# 		self.fc1 = nn.Linear(input_dim, hidden_dim)
+# 		# self.bn_1 = nn.BatchNorm1d(hidden_dim)
+
+# 		self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+# 		# self.bn_2 = nn.BatchNorm1d(hidden_dim)
+
+# 		#self.fc3 = nn.Linear(hidden_dim, hidden_dim)
+# 		#self.bn_3 = nn.BatchNorm1d(hidden_dim)
+		
+# 		self.fc_out = nn.Linear(hidden_dim, output_dim)
+# 		# self.bn_out = nn.BatchNorm1d(output_dim)
+
+# 		self.relu = nn.ReLU()
+# 		self.sigmoid = nn.Sigmoid() # To force outputs between 0-1 for logsoftmax. Might help with unexpected dips??
+
+# 	def forward(self, input):
+# 		input = self.relu(self.fc1(input))
+
+# 		input = self.relu(self.fc2(input))
+
+# 		#input = self.relu(self.fc3(input))
+# 		#input = self.bn_3(input)
+
+# 		# Old way
+# 		# return self.sigmoid(self.fc_out(input))
+
+# 		# New way
+# 		input = self.fc_out(input)
+
+# 		return input
+
+
 class DecoderLSTM(nn.Module):
 	def __init__(self, hidden_dim, feature_dim):
 		super(DecoderLSTM, self).__init__()
@@ -219,9 +255,51 @@ class SimpleRNN(nn.Module):
 
 		return self.predictor(last_hidden[0][0])
 
+class JustAutoencoder(nn.Module):
+	def __init__(self, hidden_dim, feature_dim, num_coins, args):
+		super(JustAutoencoder, self).__init__()
+
+		self.use_lstm = args.use_lstm
+		self.hidden_dim = hidden_dim
+
+		if self.use_lstm:
+			self.encoder = EncoderLSTM(hidden_dim, feature_dim)
+			self.decoder = DecoderLSTM(hidden_dim, feature_dim)
+		else:
+			self.encoder = EncoderGRU(hidden_dim, feature_dim)
+			self.decoder = DecoderGRU(hidden_dim, feature_dim)
+
+	def forward(self, input, teacher_input=None, use_predictor=False, return_hidden=False):
+		_, last_hidden = self.encoder(input)
+		if return_hidden:
+			if self.use_lstm:
+				result = torch.empty(2, self.hidden_dim)
+
+				result[0] = last_hidden[0].cpu()
+				result[1] = last_hidden[1].cpu()
+				return result
+			else:
+				return last_hidden.cpu()
+
+		if use_predictor:
+			return last_hidden[0][0]
+		else:
+			return self.decoder(teacher_input, last_hidden)
+
+	def get_encoder_param(self):
+		return list(self.encoder.parameters())
+
+	def get_decoder_param(self):
+		return list(self.decoder.parameters())
+
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())
+
 class Autoencoder(nn.Module):
 	def __init__(self, hidden_dim, feature_dim, num_coins, args):
 		super(Autoencoder, self).__init__()
+
+		self.encoder_requires_grad = True
 
 		self.use_lstm = args.use_lstm
 		self.hidden_dim = hidden_dim
@@ -265,18 +343,11 @@ class Autoencoder(nn.Module):
 	def num_parameters(self):
 		return sum(p.numel() for p in self.parameters())
 
-	def freeze_autoencoder(self):
+	def toogle_freeze_encoder(self):
+		self.encoder_requires_grad = not self.encoder_requires_grad
 		for param in self.encoder.parameters():
-			param.requires_grad = False
-		for param in self.decoder.parameters():
-			param.requires_grad = False
-
-	def unfreeze_autoencoder(self):
-		for param in self.encoder.parameters():
-			param.requires_grad = True
-		for param in self.decoder.parameters():
-			param.requires_grad = True
-
+			param.requires_grad = self.encoder_requires_grad
+	
 class CNNEncoder(nn.Module):
 	def __init__(self, feature_dim):
 		super(CNNEncoder, self).__init__()
@@ -342,6 +413,8 @@ class CNNDecoder(nn.Module):
 
 		self.conv0 = ConvLayer(16, feature_dim, 3, padding=1)
 
+		self.sigmoid = nn.Sigmoid()
+
 	def forward(self, input):
 		input = self.conv6(input)
 
@@ -355,8 +428,35 @@ class CNNDecoder(nn.Module):
 
 		input = self.conv1(input)
 
-		input = self.conv0(input)
+		input = self.sigmoid(self.conv0(input))
 		return input
+
+class JustCNNAutoencoder(nn.Module):
+	def __init__(self, feature_dim, num_coins, args):
+		super(JustCNNAutoencoder, self).__init__()
+
+		self.encoder = CNNEncoder(feature_dim)
+		self.decoder = CNNDecoder(feature_dim)
+
+	def forward(self, input, use_predictor=False, return_hidden=False, **kwargs):
+		last = self.encoder(input)
+
+		if return_hidden:
+			return last.view(input.size(0), -1).cpu()
+
+		if use_predictor:
+			return last
+		else:
+			return self.decoder(last)
+
+	def get_encoder_param(self):
+		return list(self.encoder.parameters())
+
+	def get_decoder_param(self):
+		return list(self.decoder.parameters())
+
+	def num_parameters(self):
+		return sum(p.numel() for p in self.parameters())
 
 class CNNAutoencoder(nn.Module):
 	def __init__(self, feature_dim, num_coins, args):
@@ -396,7 +496,7 @@ class ConvLayerUp(nn.Module):
 		super(ConvLayerUp, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		self.relu = nn.ReLU()
+		self.relu = nn.Sigmoid()
 		self.upsample = nn.Upsample(scale_factor=2)
 
 
@@ -425,7 +525,7 @@ class ConvLayerDown(nn.Module):
 		super(ConvLayerDown, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		self.relu = nn.ReLU()
+		self.relu = nn.Sigmoid()
 		self.pool = nn.MaxPool1d(2)
 
 	def forward(self, input):

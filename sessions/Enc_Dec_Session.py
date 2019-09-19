@@ -1,12 +1,13 @@
 import torch
 import torch.optim as optim
 from torch.nn import CrossEntropyLoss
+import os
 
 from utils.metrics import custom_mse_loss, categorization_acc
 from utils.summarizer import summarize_values
 
 from sessions.CoinSession import CoinSession
-from model import Autoencoder
+from model import JustAutoencoder, Predictor, Autoencoder
 
 class Enc_Dec_Session(CoinSession):
 	def __init__(self, args, training_dataloader, 
@@ -19,16 +20,27 @@ class Enc_Dec_Session(CoinSession):
 													test_dataloader=test_dataloader,
 							 						value_summarize_fn=value_summarize_fn)
 
-		self.model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=num_loaded_coins, args=args)
-
+		if args.freeze:
+			self.model = JustAutoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=num_loaded_coins, args=args)
+			self.predictor = Predictor(input_dim=args.hidden_size, hidden_dim=args.fc_hidden_dim, output_dim=num_loaded_coins)
+		else:
+			self.model = Autoencoder(hidden_dim=args.hidden_size, feature_dim=1, num_coins=num_loaded_coins, args=args)
+		
 		self.reconstruction_loss = custom_mse_loss
 		self.categorization_loss = CrossEntropyLoss()
-		self.optimizers = [optim.Adam(self.model.get_encoder_param() + self.model.get_decoder_param(), lr=self.args.learning_rate), 
-						   optim.Adam(self.model.get_encoder_param() + self.model.get_predictor_param(), lr=self.args.learning_rate)]
+
+		if args.freeze:
+			self.optimizers = [optim.Adam(self.model.get_encoder_param() + self.model.get_decoder_param(), lr=self.args.learning_rate), 
+							   optim.Adam(self.predictor.parameters(), lr=self.args.learning_rate)]
+		else:
+			self.optimizers = [optim.Adam(self.model.get_encoder_param() + self.model.get_decoder_param(), lr=self.args.learning_rate), 
+							   optim.Adam(self.model.get_encoder_param() + self.model.get_predictor_param(), lr=self.args.learning_rate)]
 
 		if torch.cuda.is_available():
 			print("Moving model to gpu...")
 			self.model.cuda()
+			if args.freeze:
+				self.predictor.cuda()
 			self.epsilon = torch.tensor(1e-7).cuda()
 		else:
 			self.epsilon = torch.tensor(1e-7)
@@ -43,6 +55,8 @@ class Enc_Dec_Session(CoinSession):
 
 	def comment_string(self):
 		comment = "enc_dec_"
+		if self.args.freeze:
+			comment += "freeze_"
 		comment += "b{batch_size}_"
 		comment += "lr{learning_rate}_"
 		comment += "db{top_db}_"
@@ -62,6 +76,21 @@ class Enc_Dec_Session(CoinSession):
 
 		return comment
 
+	def on_epoch_finished(self, current_epoch):
+		if self.args.save:
+			if self.args.no_state_dict:
+				if self.args.freeze:
+					torch.save(self.model, os.path.join(self.model_save_path, "{:04d}.autoencoder.model".format(current_epoch + 1)))
+					torch.save(self.predictor, os.path.join(self.model_save_path, "{:04d}.predictor.model".format(current_epoch + 1)))
+				else:
+					torch.save(self.model, os.path.join(self.model_save_path, "{:04d}.model".format(current_epoch + 1)))
+			else:
+				if self.args.freeze:
+					torch.save(self.model.state_dict(), os.path.join(self.model_save_path, "{:04d}.autoencoder.weights".format(current_epoch + 1)))
+					torch.save(self.predictor.state_dict(), os.path.join(self.model_save_path, "{:04d}.predictor.weights".format(current_epoch + 1)))
+				else:
+					torch.save(self.model.state_dict(), os.path.join(self.model_save_path, "{:04d}.weights".format(current_epoch + 1)))
+
 	def on_train_loop_start(self, current_epoch):
 		self.model.train()
 		print("-------------")
@@ -71,23 +100,43 @@ class Enc_Dec_Session(CoinSession):
 		batch_num = kwargs["batch_num"]
 		batch_content = kwargs["batch_content"]
 		existing_results = kwargs["existing_results"]
+		current_epoch = kwargs["current_epoch"]
 
 		print("Training batch: {}/{}".format(batch_num + 1, self.num_total_train_steps_per_epoch), end="\r")
 
 		input_tensor, reversed_input, teacher_input, output = batch_content["input"], batch_content["reversed_input"], batch_content["teacher_input"], batch_content["label"]
 
-		model_output = self.model(input=input_tensor, teacher_input=teacher_input)
-		loss = self.reconstruction_loss(model_output, reversed_input)
+		if self.args.architecture_split: 
+			if current_epoch < self.args.architecture_split:
+				model_output = self.model(input=input_tensor, teacher_input=teacher_input)
+				loss = self.reconstruction_loss(model_output, reversed_input)
 
-		existing_results["train/reconstruction_loss"].append(loss.item())
+				existing_results["train/reconstruction_loss"].append(loss.item())
 
-		self.optimizers[0].zero_grad()
-		loss.backward()
-		self.optimizers[0].step()
+				self.optimizers[0].zero_grad()
+				loss.backward()
+				self.optimizers[0].step()
 
-		del loss # Necessary?
+				del loss # Necessary?
+				return ## Stop early if we first just train the autoencoder
+		else:
+			model_output = self.model(input=input_tensor, teacher_input=teacher_input)
+			loss = self.reconstruction_loss(model_output, reversed_input)
+
+			existing_results["train/reconstruction_loss"].append(loss.item())
+
+			self.optimizers[0].zero_grad()
+			loss.backward()
+			self.optimizers[0].step()
+
+			del loss # Necessary?
+			print("Test")
 	
-		predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
+		if self.args.freeze:
+			encoded_state = self.model(input=input_tensor, use_predictor=True).detach()
+			predicted_category = self.predictor(encoded_state)
+		else:
+			predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
 		loss = self.categorization_loss(input=predicted_category + self.epsilon, target=output)
 	
 		existing_results["train/categorization_loss"].append(loss.item())
@@ -112,7 +161,12 @@ class Enc_Dec_Session(CoinSession):
 
 		input_tensor, output = batch_content["input"], batch_content["label"]
 	
-		predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
+		if self.args.freeze:
+			encoded_state = self.model(input=input_tensor, use_predictor=True).detach()
+			predicted_category = self.predictor(encoded_state)
+		else:
+			predicted_category = self.model(input=input_tensor, teacher_input=None, use_predictor=True)
+
 		loss = self.categorization_loss(input=predicted_category + self.epsilon, target=output)
 	
 		existing_results["val/categorization_loss"].append(loss.item())

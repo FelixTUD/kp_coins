@@ -156,12 +156,19 @@ def main(args):
 		else:
 			device = torch.device('cpu')
 		model = None
+		predictor = None
 		if args.no_state_dict:
-			model = torch.load(args.weights, map_location=device)
+			if args.freeze:
+				model = torch.load(args.autoencoder_weights, map_location=device)
+				predictor = torch.load(args.predictor_weights, map_location=device)
+			else:
+				model = torch.load(args.weights, map_location=device)
 		else:
 			assert(args.no_state_dict), "State dict is necessary for metrics. Use --no_state_dict during training!"
 
 		model.eval()
+		if predictor:
+			predictor.eval()
 
 		coins = args.coins
 
@@ -284,7 +291,11 @@ def main(args):
 
 					if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 						input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
-						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+						if args.freeze:
+							encoded_state = model(input=input_tensor, use_predictor=True)
+							predicted_category = predictor(encoded_state)
+						else:
+							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 						predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
 					else:
 						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
@@ -312,7 +323,11 @@ def main(args):
 						if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
 							input_tensor = input_tensor.unsqueeze(0) # Introduce channel dimension, we have just 1 channel (=feature_dim)
 							input_tensor = input_tensor.unsqueeze(0) # Introduce batch dimension
-							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+							if args.freeze:
+								encoded_state = model(input=input_tensor, use_predictor=True)
+								predicted_category = predictor(encoded_state)
+							else:
+								predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 							predicted_category = predicted_category.squeeze(0) # Remove batch dimension
 							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
 						else:
@@ -323,7 +338,7 @@ def main(args):
 						predicted_category = predicted_category.cpu().numpy()
 						predicted_categories.append(coins[np.argmax(predicted_category)])
 
-					majority_class = max(set(predicted_categories), key=predicted_categories.count)
+					majority_class = int(max(set(predicted_categories), key=predicted_categories.count))
 					expected.append(target_label)
 					predicted.append(majority_class)
 
@@ -351,7 +366,8 @@ if __name__ == "__main__":
 	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
 	parser.add_argument("--val_mode", type=str, choices=["classic", "window_majority"], default="classic", help="Whether to create the evaluation confusion matrix by comparing each window result with the corresponding label or compare the majority vote of the predicted windows to the target label. Default: classic.")
 	parser.add_argument("--skip_tsne", action="store_true", help="If set, skips the tsne creation step when using metrics mode.")
-	
+	parser.add_argument("--freeze", action="store_true", help="If set, freezes the encoder while training the predictor.")
+	parser.add_argument("-as", "--architecture_split", type=int, default=None, help="If set, determines the epoch of architecture change to only training the predictor. Only valid for autoencoder type networks.")
 
 	parser.add_argument("-c", "--cpu_count", type=int, default=0, help="Number of worker threads to use. Default 0")
 	parser.add_argument("-b", "--batch_size", type=int, default=96, help="Batch size. Default 96")

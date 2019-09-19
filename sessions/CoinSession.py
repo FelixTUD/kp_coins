@@ -100,7 +100,7 @@ class CoinSession(Session):
 		self.on_train_loop_start(current_epoch)
 
 		for batch_num, batch_content in enumerate(self.training_dataloader):
-			self.train_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results) 
+			self.train_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results, current_epoch=current_epoch) 
 
 		self.on_train_loop_finished(current_epoch)
 
@@ -111,8 +111,9 @@ class CoinSession(Session):
 
 		self.on_evaluate_loop_start(current_epoch)
 
-		for batch_num, batch_content in enumerate(self.validation_dataloader):
-			self.evaluate_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results) 
+		with torch.no_grad():
+			for batch_num, batch_content in enumerate(self.validation_dataloader):
+				self.evaluate_inner(batch_num=batch_num, batch_content=batch_content, existing_results=self.existing_results) 
 
 		self.on_evaluate_loop_finished(current_epoch)
 
