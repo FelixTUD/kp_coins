@@ -97,6 +97,7 @@ class CNN_Enc_Dec_Session(CoinSession):
 		batch_num = kwargs["batch_num"]
 		batch_content = kwargs["batch_content"]
 		existing_results = kwargs["existing_results"]
+		current_epoch = kwargs["current_epoch"]
 
 		print("Training batch: {}/{}".format(batch_num + 1, self.num_total_train_steps_per_epoch), end="\r")
 
@@ -161,7 +162,7 @@ class CNN_Enc_Dec_Session(CoinSession):
 		input_tensor = input_tensor.unsqueeze(1)
 
 		if self.args.freeze:
-			encoded = self.model(input=input_tensor, use_predictor=True).detach()
+			encoded = self.model(input=input_tensor, use_predictor=True)
 			predicted_category = self.predictor(encoded)
 		else:
 			predicted_category = self.model(input=input_tensor, use_predictor=True)

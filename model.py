@@ -118,7 +118,6 @@ class DecoderLSTM(nn.Module):
 		self.lstm = nn.LSTM(input_size=feature_dim, hidden_size=hidden_dim, batch_first=True)
 		self.fc = nn.Linear(hidden_dim, feature_dim)
 		self.time_dist_act = nn.Tanh()
-		self.sigmoid = nn.Sigmoid()
 
 		## Initialize weights
 
@@ -382,13 +381,21 @@ class CNNPredictor(nn.Module):
 	def __init__(self, feature_dim, num_coins, args):
 		super(CNNPredictor, self).__init__()
 
-		self.fc_out = nn.Linear(((args.window_size // 64)) * 16, num_coins)
+		self.fc_hidden = nn.Linear(((args.window_size // 64)) * 16, args.fc_hidden_dim)
+		self.bnorm_hidden = nn.BatchNorm1d(args.fc_hidden_dim)
+
+		self.fc_out = nn.Linear(args.fc_hidden_dim, num_coins)
 		self.bnorm_out = nn.BatchNorm1d(num_coins)
+		
 		self.sigmoid = nn.Sigmoid()
 
 	def forward(self, input):
 		input = input.view(input.size(0), -1)
 
+		input = self.fc_hidden(input)
+		input = self.bnorm_hidden(input)
+		input = self.sigmoid(input)
+		
 		input = self.fc_out(input)
 		input = self.bnorm_out(input)
 		input = self.sigmoid(input)
@@ -413,7 +420,7 @@ class CNNDecoder(nn.Module):
 
 		self.conv0 = ConvLayer(16, feature_dim, 3, padding=1)
 
-		self.sigmoid = nn.Sigmoid()
+		self.tanh = nn.Tanh()
 
 	def forward(self, input):
 		input = self.conv6(input)
@@ -428,7 +435,7 @@ class CNNDecoder(nn.Module):
 
 		input = self.conv1(input)
 
-		input = self.sigmoid(self.conv0(input))
+		input = self.tanh(self.conv0(input))
 		return input
 
 class JustCNNAutoencoder(nn.Module):
@@ -496,7 +503,7 @@ class ConvLayerUp(nn.Module):
 		super(ConvLayerUp, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		self.relu = nn.Sigmoid()
+		self.relu = nn.ReLU()
 		self.upsample = nn.Upsample(scale_factor=2)
 
 
@@ -525,7 +532,7 @@ class ConvLayerDown(nn.Module):
 		super(ConvLayerDown, self).__init__()
 		self.conv = nn.Conv1d(in_channels, out_channels, filter_size, padding=padding)
 		self.bnorm = nn.BatchNorm1d(out_channels)
-		self.relu = nn.Sigmoid()
+		self.relu = nn.ReLU()
 		self.pool = nn.MaxPool1d(2)
 
 	def forward(self, input):

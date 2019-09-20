@@ -149,7 +149,6 @@ def main(args):
 		# Create tsne and confusion matrix and save at path from --save argument
 
 		from sklearn.manifold import TSNE
-		assert (args.weights), "No weights file specified!"
 
 		if cuda_available:
 			device = torch.device('cuda')
@@ -298,7 +297,11 @@ def main(args):
 							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 						predicted_category = predicted_category.squeeze(1) # Remove channel dimension again
 					else:
-						predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+						if args.freeze:
+							encoded_state = model(input=input_tensor, use_predictor=True)
+							predicted_category = predictor(encoded_state)
+						else:
+							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 
 					predicted_category = predicted_category.cpu().numpy()
 
@@ -332,7 +335,11 @@ def main(args):
 							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
 						else:
 							input_tensor = input_tensor.unsqueeze(0) # Introduce batch dimension
-							predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
+							if args.freeze:
+								encoded_state = model(input=input_tensor, use_predictor=True)
+								predicted_category = predictor(encoded_state)
+							else:
+								predicted_category = model(input=input_tensor, use_predictor=True, teacher_input=None)
 							predicted_category = predicted_category.squeeze(0) # Remove channel dimension again
 
 						predicted_category = predicted_category.cpu().numpy()
@@ -379,6 +386,9 @@ if __name__ == "__main__":
 	parser.add_argument("-e", "--epochs", type=int, default=100, help="Number of epochs")
 	parser.add_argument("--save", type=str, default=None, help="Specify save folder for weight files or plots. Default: None")
 	parser.add_argument("-w", "--weights", type=str, default=None, help="Model weights file. Only used for 'metrics' mode. Default: None")
+	parser.add_argument("--autoencoder_weights", type=str, default=None, help="Autoencoder weights file. Only used for 'metrics' mode in combination with --freeze. Default: None")
+	parser.add_argument("--predictor_weights", type=str, default=None, help="Predictor weights file. Only used for 'metrics' mode in combination with --freeze. Default: None")
+	
 	parser.add_argument("--top_db", type=int, default=2, help="Only used if --rosa is specified. Value under which audio is considered as silence at beginning/end. Default: 2")
 	parser.add_argument("--coins", nargs="+", default=[1, 2, 5, 20, 50, 100, 200], help="Use only specified coin types. Possible values: 1, 2, 5, 20, 50, 100, 200. Default uses all coins.")
 	parser.add_argument("--num_examples", type=int, default=None, help="Number of used coin data examples from each class for training. Default uses the minimum number of all used classes.")
