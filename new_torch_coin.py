@@ -142,6 +142,102 @@ def main(args):
 
 		session.run(evaluate=True, test=False)
 
+	if args.mode == "metrics-pca":
+		if args.save:
+			os.makedirs(args.save, exist_ok=True)
+
+		# Create tsne and confusion matrix and save at path from --save argument
+
+		from sklearn.decomposition import PCA
+
+		if cuda_available:
+			device = torch.device('cuda')
+		else:
+			device = torch.device('cpu')
+		model = None
+		predictor = None
+		if args.no_state_dict:
+			if args.freeze:
+				model = torch.load(args.autoencoder_weights, map_location=device)
+				predictor = torch.load(args.predictor_weights, map_location=device)
+			else:
+				model = torch.load(args.weights, map_location=device)
+		else:
+			assert(args.no_state_dict), "State dict is necessary for metrics. Use --no_state_dict during training!"
+
+		model.eval()
+		if predictor:
+			predictor.eval()
+
+		num_examples_per_class = complete_dataset.get_num_coins_per_class()
+		colors = ['aqua', 'darkorange', 'cornflowerblue', 'darkblue', 'black', 'green', 'red'][:len(args.coins)]
+		plot_colors = []
+
+		print("Generating TSNE plot")
+
+		final_encodings = None
+
+		coins = args.coins
+
+		encodings = defaultdict(list)
+		complete_dataloader = DataLoader(complete_dataset, batch_size=1, shuffle=True, num_workers=0)
+		
+		with torch.no_grad():
+			for i, batch_content in enumerate(complete_dataloader):
+				print("\r{}/{}".format(i + 1, len(complete_dataset)), end="")
+				input_tensor = batch_content["input"]
+				coin_class = batch_content["label"]
+				coin_class = coins[coin_class]
+
+				if args.architecture == "cnn" or args.architecture == "cnn_enc_dec":
+					input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+					encoded_input = model(input=input_tensor, return_hidden=True)
+					input_tensor = input_tensor.squeeze(1) # Delete channel dimension
+				else:
+					encoded_input = model(input=input_tensor, return_hidden=True)
+
+				encodings[coin_class].append(encoded_input[0].numpy())
+		print("")
+
+		flattened_encodings = []
+		for i, coin in enumerate(coins):
+			flattened_encodings.extend(encodings[coin])
+			color = colors[i]
+			for _ in range(len(encodings[coin])):
+				plot_colors.append(color)
+
+		flattened_encodings = np.array(flattened_encodings)
+		print(flattened_encodings.shape)
+		final_encodings = flattened_encodings
+
+		fig = plt.figure(figsize=(16, 9), dpi=120)
+		ax = fig.add_subplot(111)#, projection="3d")
+
+		embedded = PCA(n_components=2).fit_transform(final_encodings)
+		ax.scatter(embedded[:,0], embedded[:,1], c=plot_colors, alpha=0.5)
+
+		# Create custom legend
+		labels = ["1 ct", "2 ct", "5 ct", "20 ct", "50 ct", "1 €", "2 €"]
+		legend_items = []
+		for i, _ in enumerate(coins):
+			legend_items.append(Line2D([0], [0], marker='o', color="w", label=labels[i], markerfacecolor=colors[i], markersize=15))
+ 
+		box = ax.get_position()
+		ax.set_position([box.x0, box.y0 + box.height * 0.1,
+                 		box.width, box.height * 0.9])
+
+		ax.legend(handles=legend_items, loc='upper center', bbox_to_anchor=(0.5, -0.05),
+          		  fancybox=True, shadow=True, ncol=len(coins))
+
+		if args.plot_title:
+			plt.title(args.plot_title)
+
+		if args.save:
+			plt.savefig(os.path.join(args.save, "pca.png"), format="png")
+			plt.clf()
+		else:
+			plt.show()
+
 	if args.mode == "metrics":
 		if args.save:
 			os.makedirs(args.save, exist_ok=True)
@@ -358,6 +454,42 @@ def main(args):
 
 		plot_confusion_matrix(norm_cm, coins, "Normalized Confusion Matrix ({:.2f}% overall accuracy)".format(percentage_correct), args=args)
 
+	if args.mode == "reconstruction":
+		if args.architecture == "cnn_enc_dec":
+			if cuda_available:
+				device = torch.device('cuda')
+			else:
+				device = torch.device('cpu')
+			model = None
+			if args.freeze:
+				assert(args.autoencoder_weights)
+				model = torch.load(args.autoencoder_weights, map_location=device)
+			else:
+				assert(args.weights)
+				model = torch.load(args.weights, map_location=device)
+
+			validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True, num_workers=0)
+			with torch.no_grad():
+				for i, batch_content in enumerate(validation_dataloader):
+					print("\r{}/{}".format(i + 1, len(complete_dataset)), end="")
+					input_tensor = batch_content["input"]
+
+					expected_imput = input_tensor.squeeze(0).cpu().numpy() # Remove batch dim
+
+					input_tensor = input_tensor.unsqueeze(1) # Introduce channel dimension, we have just 1 channel (=feature_dim)
+					reconstructed_input = model(input=input_tensor)
+					reconstructed_input = reconstructed_input.squeeze(0) # Remove batch dim
+					reconstructed_input = reconstructed_input.squeeze(0).cpu().numpy() # Remove channel dim
+
+					plt.plot(expected_imput, label="Expected")
+					plt.plot(reconstructed_input, label="Reconstruction")
+					plt.xlabel("Timesteps")
+					plt.legend()
+					plt.show()
+					
+			print("")
+
+
 if __name__ == "__main__":
 	torch.multiprocessing.set_start_method("spawn")
 
@@ -368,7 +500,7 @@ if __name__ == "__main__":
 	required_arguments.add_argument("-p", "--path", type=str, required=True, help="Path to hdf5 data file.")
 
 	parser.add_argument("--use_variational_autoencoder", action="store_true", help="Uses a variational autoencoder model")
-	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
+	parser.add_argument("-m", "--mode", type=str, choices=["train", "metrics", "metrics-pca", "reconstruction"], default="train", help="Mode of the script. Can be either 'train' or 'metrics'. Default 'train'")
 	parser.add_argument("-a", "--architecture", type=str, choices=["enc_dec", "cnn", "cnn_enc_dec", "simple_rnn"], default="enc_dec", help="NN architecture to use. Default: enc_dec")
 	parser.add_argument("--tsne_set", type=str, choices=["validation", "all"], default="all", help="What dataset to use for TSNE plot creation. All means training set + validation set. Default: all.")
 	parser.add_argument("--val_mode", type=str, choices=["classic", "window_majority"], default="classic", help="Whether to create the evaluation confusion matrix by comparing each window result with the corresponding label or compare the majority vote of the predicted windows to the target label. Default: classic.")
